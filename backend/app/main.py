@@ -9,9 +9,13 @@ from fastapi.responses import StreamingResponse
 
 from .models import CreateTaskRequest, TaskRecord
 from .models import TaskStatus
+from .config import load_backend_env
 from .llm import create_llm_client
 from .runner import TaskRunner
 from .storage import TaskStore
+
+
+load_backend_env()
 
 
 def get_task_store() -> TaskStore:

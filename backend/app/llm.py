@@ -1,6 +1,6 @@
+import asyncio
 import json
 import os
-import asyncio
 from collections.abc import AsyncIterator
 
 import httpx
@@ -20,13 +20,15 @@ class FakeLLMClient(LLMClient):
 
 class MiniMaxAnthropicClient(LLMClient):
     def __init__(self) -> None:
-        self.base_url = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io")
+        self.base_url = os.environ.get(
+            "MINIMAX_BASE_URL",
+            "https://api.minimaxi.com/anthropic",
+        )
         self.api_key = os.environ.get("MINIMAX_API_KEY", "")
-        self.subscription_key = os.environ.get("MINIMAX_SUBSCRIPTION_KEY")
         self.model = os.environ.get("MINIMAX_MODEL", "MiniMax-M3")
 
     async def stream_planner(self, goal: str) -> AsyncIterator[str]:
-        if not self.api_key and not self.subscription_key:
+        if not self.api_key:
             raise RuntimeError("MiniMax credentials are not configured.")
 
         headers = {
@@ -34,8 +36,6 @@ class MiniMaxAnthropicClient(LLMClient):
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        if self.subscription_key:
-            headers["x-api-key"] = self.subscription_key
 
         payload = {
             "model": self.model,
@@ -50,7 +50,7 @@ class MiniMaxAnthropicClient(LLMClient):
             ],
         }
 
-        url = f"{self.base_url.rstrip('/')}/anthropic/v1/messages"
+        url = f"{self.base_url.rstrip('/')}/v1/messages"
         async with httpx.AsyncClient(timeout=60) as client:
             async with client.stream("POST", url, headers=headers, json=payload) as response:
                 response.raise_for_status()

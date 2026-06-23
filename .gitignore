@@ -5,6 +5,7 @@ __pycache__/
 
 # Local database/runtime data
 backend/data/
+backend/.env
 
 # Node / Next.js
 frontend/node_modules/
