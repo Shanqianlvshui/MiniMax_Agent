@@ -7,7 +7,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from .models import CreateTaskRequest, TaskRecord
+from .models import ApprovalRequest, CreateTaskRequest, TaskDetail, TaskRecord
 from .models import TaskStatus
 from .config import load_backend_env
 from .llm import create_llm_client
@@ -45,7 +45,7 @@ def create_app() -> FastAPI:
         if not goal:
             raise HTTPException(status_code=422, detail="Task goal cannot be empty.")
         task = store.create_task(str(uuid4()), goal)
-        background_tasks.add_task(run_planner_background, task.id)
+        background_tasks.add_task(run_workflow_background, task.id)
         return task
 
     @app.get("/tasks/{task_id}", response_model=TaskRecord)
@@ -57,6 +57,16 @@ def create_app() -> FastAPI:
         if task is None:
             raise HTTPException(status_code=404, detail="Task not found.")
         return task
+
+    @app.get("/tasks/{task_id}/details", response_model=TaskDetail)
+    def get_task_details(
+        task_id: str,
+        store: TaskStore = Depends(get_task_store),
+    ) -> TaskDetail:
+        detail = store.task_detail(task_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="Task not found.")
+        return detail
 
     @app.post("/tasks/{task_id}/cancel", response_model=TaskRecord)
     def cancel_task(
@@ -70,6 +80,24 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail="Task cannot be cancelled.")
         return task
 
+    @app.post("/tasks/{task_id}/approval", response_model=TaskRecord)
+    def approve_task(
+        task_id: str,
+        request: ApprovalRequest,
+        store: TaskStore = Depends(get_task_store),
+    ) -> TaskRecord:
+        task = store.get_task(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="Task not found.")
+        if task.status != TaskStatus.WAITING_HUMAN_INPUT:
+            raise HTTPException(status_code=409, detail="Task is not waiting for approval.")
+        runner = TaskRunner(store, create_llm_client())
+        asyncio.run(runner.finalize_after_approval(task_id, request.decision, request.notes))
+        updated = store.get_task(task_id)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Task not found.")
+        return updated
+
     @app.get("/tasks/{task_id}/events")
     def stream_task_events(
         task_id: str,
@@ -80,7 +108,12 @@ def create_app() -> FastAPI:
 
         def event_stream():
             last_seq = 0
-            terminal_events = {"task.completed", "task.failed", "task.cancelled"}
+            terminal_events = {
+                "task.completed",
+                "task.failed",
+                "task.cancelled",
+                "approval.required",
+            }
             while True:
                 events = [
                     event
@@ -119,9 +152,9 @@ def create_app() -> FastAPI:
     return app
 
 
-def run_planner_background(task_id: str) -> None:
+def run_workflow_background(task_id: str) -> None:
     runner = TaskRunner(TaskStore(), create_llm_client())
-    asyncio.run(runner.run_planner_task(task_id))
+    asyncio.run(runner.run_task(task_id))
 
 
 app = create_app()
