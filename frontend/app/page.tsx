@@ -19,12 +19,27 @@ type TaskRecord = {
   updated_at: string;
 };
 
+type TaskEvent = {
+  seq: number;
+  type: string;
+  payload: {
+    agent?: string;
+    token?: string;
+    summary?: string;
+    status?: string;
+    error?: string;
+  };
+  created_at: string;
+};
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 export default function TaskConsole() {
   const [goal, setGoal] = useState("");
   const [task, setTask] = useState<TaskRecord | null>(null);
+  const [events, setEvents] = useState<TaskEvent[]>([]);
+  const [plannerOutput, setPlannerOutput] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -48,7 +63,10 @@ export default function TaskConsole() {
 
       const created = (await response.json()) as TaskRecord;
       setTask(created);
+      setEvents([]);
+      setPlannerOutput("");
       setGoal("");
+      subscribeToTaskEvents(created.id);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Task creation failed");
     } finally {
@@ -56,19 +74,62 @@ export default function TaskConsole() {
     }
   }
 
-  async function refreshTask() {
-    if (!task) {
+  async function refreshTask(taskId = task?.id) {
+    if (!taskId) {
       return;
     }
 
     setMessage(null);
-    const response = await fetch(`${API_BASE_URL}/tasks/${task.id}`);
+    const response = await fetch(`${API_BASE_URL}/tasks/${taskId}`);
     if (!response.ok) {
       setMessage(`Refresh failed with ${response.status}`);
       return;
     }
 
     setTask((await response.json()) as TaskRecord);
+  }
+
+  function subscribeToTaskEvents(taskId: string) {
+    const source = new EventSource(`${API_BASE_URL}/tasks/${taskId}/events`);
+
+    source.onmessage = (event) => {
+      appendTaskEvent(JSON.parse(event.data) as TaskEvent);
+    };
+
+    [
+      "task.started",
+      "agent.started",
+      "agent.token",
+      "agent.completed",
+      "agent.failed",
+      "task.completed",
+      "task.failed",
+    ].forEach((type) => {
+      source.addEventListener(type, (event) => {
+        const taskEvent = JSON.parse((event as MessageEvent).data) as TaskEvent;
+        appendTaskEvent(taskEvent);
+        if (type === "agent.token" && taskEvent.payload.token) {
+          setPlannerOutput((current) => current + taskEvent.payload.token);
+        }
+        if (type === "task.completed" || type === "task.failed") {
+          source.close();
+          refreshTask(taskId);
+        }
+      });
+    });
+
+    source.onerror = () => {
+      source.close();
+    };
+  }
+
+  function appendTaskEvent(event: TaskEvent) {
+    setEvents((current) => {
+      if (current.some((existing) => existing.seq === event.seq)) {
+        return current;
+      }
+      return [...current, event].sort((left, right) => left.seq - right.seq);
+    });
   }
 
   async function requestStop() {
@@ -119,7 +180,7 @@ export default function TaskConsole() {
           <div className="panel-header">
             <h2>Task status</h2>
             <div className="actions">
-              <button disabled={!task} type="button" onClick={refreshTask}>
+              <button disabled={!task} type="button" onClick={() => refreshTask()}>
                 Refresh
               </button>
               <button
@@ -161,6 +222,33 @@ export default function TaskConsole() {
             </dl>
           ) : (
             <p className="empty">No task has been started yet.</p>
+          )}
+        </section>
+
+        <section className="agent-log" aria-label="Planner log">
+          <div className="panel-header">
+            <h2>Planner log</h2>
+            <span className="event-count">{events.length} events</span>
+          </div>
+          <pre>{plannerOutput || "No planner output yet."}</pre>
+        </section>
+
+        <section className="event-list" aria-label="Task events">
+          <div className="panel-header">
+            <h2>Events</h2>
+          </div>
+          {events.length > 0 ? (
+            <ol>
+              {events.map((event) => (
+                <li key={event.seq}>
+                  <span>{event.seq}</span>
+                  <strong>{event.type}</strong>
+                  <code>{JSON.stringify(event.payload)}</code>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="empty">No events have been received yet.</p>
           )}
         </section>
       </section>

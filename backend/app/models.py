@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,15 @@ class TaskRecord(BaseModel):
     current_agent: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+
+class TaskEvent(BaseModel):
+    id: int
+    task_id: str
+    seq: int
+    type: str
+    payload: dict[str, Any]
+    created_at: datetime
 
 
 def utc_now() -> datetime:
