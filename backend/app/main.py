@@ -13,6 +13,7 @@ from .config import load_backend_env
 from .llm import create_llm_client
 from .runner import TaskRunner
 from .storage import TaskStore
+from .tools.mmx_cli import MmxCliToolProvider
 
 
 load_backend_env()
@@ -104,6 +105,16 @@ def create_app() -> FastAPI:
                 time.sleep(0.1)
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    @app.get("/tools/mmx/status")
+    def get_mmx_status() -> dict:
+        provider = MmxCliToolProvider()
+        auth = provider.auth_status()
+        quota = provider.quota() if auth.ok else None
+        return {
+            "auth": auth.__dict__,
+            "quota": quota.__dict__ if quota else None,
+        }
 
     return app
 
