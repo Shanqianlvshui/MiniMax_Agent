@@ -174,6 +174,11 @@ export default function TaskConsole() {
 
   async function startTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (task?.status === "running") {
+      await requestStop();
+      return;
+    }
+
     setIsSubmitting(true);
     setMessage(null);
 
@@ -336,6 +341,8 @@ export default function TaskConsole() {
     latestReview?.summary ??
     latestApprovalEvent?.payload.reason ??
     "审查员没有把任务标记为完成，因为板级事实或实际硬件验证仍缺失。";
+  const isTaskRunning = task?.status === "running";
+  const composerActionLabel = isTaskRunning ? "停止" : "发送";
   const conversationMessages = useMemo(
     () => buildConversation(task?.goal ?? goal, events, latestReview),
     [events, goal, latestReview, task?.goal],
@@ -425,18 +432,17 @@ export default function TaskConsole() {
             />
             <div className="actions">
               <span>{latestEvent ? `最新事件 #${latestEvent.seq}` : "等待任务"}</span>
-              <button disabled={isSubmitting || goal.trim().length === 0} type="submit">
-                {isSubmitting ? "启动中..." : "启动任务"}
-              </button>
-              <button disabled={!task} type="button" onClick={() => refreshDetails()}>
-                刷新
-              </button>
               <button
-                disabled={!task || task.status !== "running"}
-                type="button"
-                onClick={requestStop}
+                aria-label={composerActionLabel}
+                className="composer-action"
+                disabled={
+                  isSubmitting ||
+                  (!isTaskRunning && goal.trim().length === 0)
+                }
+                title={composerActionLabel}
+                type="submit"
               >
-                停止
+                {isTaskRunning ? "■" : isSubmitting ? "…" : "↑"}
               </button>
             </div>
           </form>
