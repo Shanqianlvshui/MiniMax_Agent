@@ -303,16 +303,16 @@ textarea {
 .chat-feed {
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: 12px;
   min-height: 0;
   overflow: auto;
-  padding-right: 4px;
+  padding: 2px 4px 2px 0;
 }
 
 .chat-message {
   display: grid;
-  gap: 7px;
-  max-width: 980px;
+  gap: 8px;
+  width: min(100%, 960px);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-soft);
@@ -328,24 +328,43 @@ textarea {
   background: #101923;
 }
 
+.chat-message.system {
+  border-color: #35465a;
+  background: #121922;
+}
+
 .chat-message.reviewer {
   border-color: #4c422e;
   background: #1d1a13;
 }
 
-.chat-message span {
+.chat-message-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-message-title span,
+.chat-message-title em {
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
+  font-style: normal;
 }
 
-.chat-message p,
+.chat-message-title em {
+  color: var(--accent-strong);
+  white-space: nowrap;
+}
+
 .chat-message pre {
   margin: 0;
   color: var(--text);
   line-height: 1.5;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+  font-family: inherit;
 }
 
 .right-rail {

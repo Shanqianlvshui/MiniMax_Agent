@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Edge,
@@ -117,6 +117,14 @@ type TaskDetail = {
   hardware_validations: HardwareValidation[];
 };
 
+type ConversationMessage = {
+  id: string;
+  kind: "user" | "agent" | "system" | "reviewer";
+  title: string;
+  body: string;
+  status?: string;
+};
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
 
@@ -160,6 +168,7 @@ export default function TaskConsole() {
   const [message, setMessage] = useState<string | null>(null);
   const [approvalNotes, setApprovalNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const chatFeedRef = useRef<HTMLDivElement | null>(null);
 
   const task = detail?.task ?? null;
 
@@ -320,6 +329,17 @@ export default function TaskConsole() {
   const latestReview = detail?.reviews.at(-1);
   const selectedLog = logsByAgent[selectedAgent] ?? "";
   const latestEvent = events.at(-1);
+  const conversationMessages = useMemo(
+    () => buildConversation(task?.goal ?? goal, events, latestReview),
+    [events, goal, latestReview, task?.goal],
+  );
+
+  useEffect(() => {
+    const feed = chatFeedRef.current;
+    if (feed) {
+      feed.scrollTop = feed.scrollHeight;
+    }
+  }, [conversationMessages]);
 
   return (
     <main className="shell">
@@ -380,25 +400,16 @@ export default function TaskConsole() {
                 {latestEvent ? `最新事件 #${latestEvent.seq}` : "等待任务"}
               </span>
             </div>
-            <div className="chat-feed">
-              <article className="chat-message user">
-                <span>任务</span>
-                <p>{goal}</p>
-              </article>
-              <article className="chat-message agent">
-                <span>{formatAgent(selectedAgent)} 返回</span>
-                <pre>
-                  {selectedLog ||
-                    latestReview?.summary ||
-                    "启动任务后，这里显示选中 Agent 的实时返回内容。"}
-                </pre>
-              </article>
-              {latestReview ? (
-                <article className="chat-message reviewer">
-                  <span>审查结果</span>
-                  <p>{latestReview.summary}</p>
+            <div className="chat-feed" ref={chatFeedRef}>
+              {conversationMessages.map((chatMessage) => (
+                <article className={`chat-message ${chatMessage.kind}`} key={chatMessage.id}>
+                  <div className="chat-message-title">
+                    <span>{chatMessage.title}</span>
+                    {chatMessage.status ? <em>{chatMessage.status}</em> : null}
+                  </div>
+                  <pre>{chatMessage.body}</pre>
                 </article>
-              ) : null}
+              ))}
             </div>
           </section>
 
@@ -685,6 +696,142 @@ function RecordPanel<T>({
       )}
     </section>
   );
+}
+
+function buildConversation(
+  goal: string,
+  events: TaskEvent[],
+  latestReview: Review | undefined,
+): ConversationMessage[] {
+  const messages: ConversationMessage[] = [
+    {
+      id: "task",
+      kind: "user",
+      title: "任务",
+      body: goal,
+    },
+  ];
+
+  const agentMessageIds = new Map<string, number>();
+  const sortedEvents = [...events].sort((left, right) => left.seq - right.seq);
+
+  for (const event of sortedEvents) {
+    if (event.type === "agent.started" && event.payload.agent) {
+      const agent = event.payload.agent;
+      if (!agentMessageIds.has(agent)) {
+        agentMessageIds.set(agent, messages.length);
+        messages.push({
+          id: `agent-${agent}`,
+          kind: "agent",
+          title: `${formatAgent(agent)} 返回`,
+          body: "",
+          status: "执行中",
+        });
+      } else {
+        messages[agentMessageIds.get(agent) as number].status = "执行中";
+      }
+      continue;
+    }
+
+    if (event.type === "agent.token" && event.payload.agent && event.payload.token) {
+      const agent = event.payload.agent;
+      if (!agentMessageIds.has(agent)) {
+        agentMessageIds.set(agent, messages.length);
+        messages.push({
+          id: `agent-${agent}`,
+          kind: "agent",
+          title: `${formatAgent(agent)} 返回`,
+          body: "",
+          status: "执行中",
+        });
+      }
+      messages[agentMessageIds.get(agent) as number].body += event.payload.token;
+      continue;
+    }
+
+    if (event.type === "agent.completed" && event.payload.agent) {
+      const agent = event.payload.agent;
+      if (!agentMessageIds.has(agent)) {
+        agentMessageIds.set(agent, messages.length);
+        messages.push({
+          id: `agent-${agent}`,
+          kind: "agent",
+          title: `${formatAgent(agent)} 返回`,
+          body: event.payload.summary ?? "已完成。",
+        });
+      }
+      const agentMessage = messages[agentMessageIds.get(agent) as number];
+      if (!agentMessage.body.trim() && event.payload.summary) {
+        agentMessage.body = event.payload.summary;
+      }
+      agentMessage.status = "完成";
+      continue;
+    }
+
+    if (event.type === "agent.failed" && event.payload.agent) {
+      const agent = event.payload.agent;
+      messages.push({
+        id: `agent-failed-${event.seq}`,
+        kind: "system",
+        title: `${formatAgent(agent)} 失败`,
+        body: event.payload.error ?? event.payload.reason ?? "Agent 执行失败。",
+        status: "失败",
+      });
+      continue;
+    }
+
+    if (event.type === "approval.required") {
+      messages.push({
+        id: `approval-${event.seq}`,
+        kind: "reviewer",
+        title: "需要人工处理",
+        body: event.payload.reason ?? "审查员要求人工批准或打回。",
+        status: "等待",
+      });
+      continue;
+    }
+
+    if (event.type === "task.completed") {
+      if (event.payload.summary) {
+        messages.push({
+          id: `task-completed-${event.seq}`,
+          kind: "system",
+          title: "任务完成",
+          body: event.payload.summary,
+          status: "完成",
+        });
+      }
+      continue;
+    }
+
+    if (event.type === "task.failed" || event.type === "task.cancelled") {
+      messages.push({
+        id: `task-terminal-${event.seq}`,
+        kind: "system",
+        title: event.type === "task.failed" ? "任务失败" : "任务已停止",
+        body: event.payload.error ?? event.payload.reason ?? event.payload.summary ?? event.type,
+        status: event.type === "task.failed" ? "失败" : "停止",
+      });
+    }
+  }
+
+  for (const [agent, index] of agentMessageIds.entries()) {
+    if (!messages[index].body.trim()) {
+      messages[index].body = `${formatAgent(agent)} 已开始，等待流式输出。`;
+    }
+  }
+
+  if (latestReview && !messages.some((item) => item.kind === "reviewer")) {
+    messages.push({
+      id: `review-${latestReview.id}`,
+      kind: "reviewer",
+      title: "审查结果",
+      body: latestReview.summary,
+      status: formatStatus(latestReview.status),
+    });
+  }
+
+  return messages;
 }
 
 function buildGraph(
