@@ -3,8 +3,8 @@ import "@xyflow/react/dist/style.css";
 import "./styles.css";
 
 export const metadata: Metadata = {
-  title: "MiniMax Agent Workflow",
-  description: "Evidence-driven multi-agent task console",
+  title: "MiniMax Agent 工作流",
+  description: "证据优先的多 Agent 任务控制台",
 };
 
 export default function RootLayout({
@@ -13,7 +13,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body>{children}</body>
     </html>
   );

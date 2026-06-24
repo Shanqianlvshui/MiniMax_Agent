@@ -71,7 +71,7 @@ def test_task_runs_planner_and_streams_events(tmp_path, monkeypatch):
     assert any("event: task.started" in line for line in lines)
     assert any("event: agent.started" in line for line in lines)
     assert any("event: agent.token" in line for line in lines)
-    assert any("Plan" in line for line in lines)
+    assert any("agent.token" in line and "planner" in line for line in lines)
     assert any("event: agent.completed" in line for line in lines)
     assert any("event: task.completed" in line for line in lines)
 

@@ -40,7 +40,7 @@ class TaskRunner:
                     "approval.required",
                     {
                         "agent": "reviewer",
-                        "reason": "Reviewer found unverified hardware assumptions.",
+                        "reason": "审查员发现仍有未验证的硬件假设。",
                     },
                 )
                 return
@@ -86,21 +86,21 @@ class TaskRunner:
             self.store.record_review(
                 task_id=task_id,
                 status="rejected_by_human",
-                summary="Human reviewer rejected the current run.",
+                summary="人工审查打回了当前运行。",
                 checks=[
                     {
                         "name": "human_gate",
                         "status": "fail",
-                        "detail": notes or "No rejection notes were provided.",
+                        "detail": notes or "没有提供打回说明。",
                     }
                 ],
-                retry_instructions=notes or "Revise task instructions and run again.",
+                retry_instructions=notes or "请修改任务指令后重新运行。",
             )
-            self.store.fail_task(task_id, "Human reviewer rejected the current run.")
+            self.store.fail_task(task_id, "人工审查打回了当前运行。")
             self.store.append_event(
                 task_id,
                 "task.failed",
-                {"error": "Human reviewer rejected the current run."},
+                {"error": "人工审查打回了当前运行。"},
             )
             return
 
@@ -108,7 +108,7 @@ class TaskRunner:
         self.store.resume_task(task_id, "writer")
         await self._writer(
             task_id,
-            extra_note="Human approved the explicit assumptions. Hardware board testing is still not marked as passed.",
+            extra_note="人工已批准显式假设；实际板级测试仍未标记为通过。",
         )
         self.store.complete_task(task_id)
         self.store.append_event(task_id, "task.completed", {"status": "completed"})
@@ -118,10 +118,10 @@ class TaskRunner:
             task_id,
             "manager",
             [
-                "Scope accepted.\n",
-                "Fixed workflow selected: Planner -> Researcher -> Executor -> Reviewer -> Writer.\n",
+                "已接收任务范围。\n",
+                "已选择固定流程：规划员 -> 研究员 -> 执行员 -> 审查员 -> 撰写员。\n",
             ],
-            "Workflow route fixed and state initialized.",
+            "工作流路径已固定，状态已初始化。",
         )
 
     async def _planner(self, task_id: str, goal: str) -> None:
@@ -141,7 +141,7 @@ class TaskRunner:
             agent_name="planner",
             tool_name="artifact.plan",
             args={
-                "title": "Planner task breakdown",
+                "title": "规划员任务拆解",
                 "path": "generated/planner-plan.md",
                 "summary": planner_output,
             },
@@ -158,21 +158,21 @@ class TaskRunner:
             self._emit_token(
                 task_id,
                 "researcher",
-                "Recording source requirements and explicit unknowns for STM32 USB CDC work.\n",
+                "正在记录 STM32 USB CDC 任务的来源要求和显式未知项。\n",
             )
             self.gateway.invoke(
                 task_id,
                 "researcher",
                 "evidence.record",
                 {
-                    "claim": "MiniMax Agent should use official or primary sources for hardware-development facts.",
+                    "claim": "硬件开发事实必须来自官方或一手来源。",
                     "source_type": "project_requirement",
-                    "source_title": "Evidence-driven workflow requirement from user",
+                    "source_title": "用户提出的证据优先工作流要求",
                     "url": None,
                     "version_or_date": None,
-                    "section_or_page": "conversation",
+                    "section_or_page": "对话",
                     "confidence": "high",
-                    "notes": "This is a local project requirement, not a silicon fact.",
+                    "notes": "这是本项目的本地要求，不是芯片事实。",
                 },
             )
             self.gateway.invoke(
@@ -180,14 +180,14 @@ class TaskRunner:
                 "researcher",
                 "evidence.record",
                 {
-                    "claim": "STM32Cube tooling is the required configuration/generation path for this demo.",
+                    "claim": "本 demo 要求使用 STM32Cube 官方工具链作为配置和生成路径。",
                     "source_type": "project_requirement",
-                    "source_title": "STM32CubeIDE / STM32CubeMX workflow requirement from user",
+                    "source_title": "用户指定的 STM32CubeIDE / STM32CubeMX 工作流要求",
                     "url": None,
                     "version_or_date": None,
-                    "section_or_page": "conversation",
+                    "section_or_page": "对话",
                     "confidence": "high",
-                    "notes": "The runner records this as the requested toolchain constraint.",
+                    "notes": "运行器将其记录为用户指定的工具链约束。",
                 },
             )
             self.gateway.invoke(
@@ -195,35 +195,35 @@ class TaskRunner:
                 "researcher",
                 "assumption.record",
                 {
-                    "claim": "Board oscillator, USB D+/D- wiring, pull-up implementation, and boot/debug wiring must be confirmed on the actual board before claiming a working driver.",
-                    "scope": "STM32F103C8T6 minimum-system board USB CDC validation",
-                    "reason": "Those values depend on the physical board and cannot be inferred safely from the MCU part number alone.",
-                    "risk": "Wrong clock or USB electrical assumptions can produce firmware that compiles but fails enumeration on real hardware.",
+                    "claim": "在声称 USB CDC 驱动可用前，必须确认实际板子的晶振、USB D+/D- 连接、上拉实现以及启动/调试接线。",
+                    "scope": "STM32F103C8T6 最小系统板 USB CDC 验证",
+                    "reason": "这些值取决于具体板子，不能只根据 MCU 型号安全推断。",
+                    "risk": "错误的时钟或 USB 电气假设可能让固件能编译，但在真实硬件上无法枚举。",
                     "status": "needs_human_confirmation",
                     "requires_user_confirmation": True,
                 },
             )
         else:
-            self._emit_token(task_id, "researcher", "Recording task scope evidence.\n")
+            self._emit_token(task_id, "researcher", "正在记录任务范围证据。\n")
             self.gateway.invoke(
                 task_id,
                 "researcher",
                 "evidence.record",
                 {
-                    "claim": "The workflow state is derived from the submitted task goal.",
+                    "claim": "工作流状态来自用户提交的任务目标。",
                     "source_type": "user_request",
-                    "source_title": "Task goal",
+                    "source_title": "任务目标",
                     "url": None,
                     "version_or_date": None,
-                    "section_or_page": "task payload",
+                    "section_or_page": "任务载荷",
                     "confidence": "medium",
-                    "notes": "No external technical claims were needed for this smoke run.",
+                    "notes": "这次 smoke 运行不需要外部技术事实。",
                 },
             )
         self.store.append_event(
             task_id,
             "agent.completed",
-            {"agent": "researcher", "summary": "Evidence and assumptions recorded."},
+            {"agent": "researcher", "summary": "证据和假设已记录。"},
         )
 
     async def _executor(self, task_id: str, goal: str) -> None:
@@ -232,7 +232,7 @@ class TaskRunner:
             self._emit_token(
                 task_id,
                 "executor",
-                "Preparing CubeMX intent for STM32F103C8T6 USB CDC without mutating a missing .ioc file.\n",
+                "正在准备 STM32F103C8T6 USB CDC 的 CubeMX 配置意图；当前不会修改缺失的 .ioc 文件。\n",
             )
             self.gateway.invoke(
                 task_id,
@@ -241,10 +241,10 @@ class TaskRunner:
                 {
                     "target": "stm32f103c8t6_usb_cdc",
                     "changes": [
-                        "Enable USB device peripheral in Full Speed mode",
-                        "Enable USB CDC class middleware",
-                        "Require clock tree confirmation from the real board",
-                        "Generate project with official STM32Cube tooling after .ioc path is provided",
+                        "启用 USB Device 外设 Full Speed 模式",
+                        "启用 USB CDC Class 中间件",
+                        "要求根据真实板子确认时钟树",
+                        "提供 .ioc 路径后用官方 STM32Cube 工具生成工程",
                     ],
                 },
             )
@@ -254,24 +254,24 @@ class TaskRunner:
                 "artifact.create",
                 {
                     "kind": "firmware_plan",
-                    "title": "STM32 USB CDC implementation plan",
+                    "title": "STM32 USB CDC 实现计划",
                     "path": "generated/stm32-usb-cdc-plan.md",
                     "metadata": {
                         "target": "STM32F103C8T6",
-                        "toolchain": "STM32Cube official tooling",
+                        "toolchain": "STM32Cube 官方工具链",
                         "status": "ready_for_ioc_binding",
                     },
                 },
             )
         else:
-            self._emit_token(task_id, "executor", "Creating workflow summary artifact.\n")
+            self._emit_token(task_id, "executor", "正在创建工作流摘要产物。\n")
             self.gateway.invoke(
                 task_id,
                 "executor",
                 "artifact.create",
                 {
                     "kind": "execution_summary",
-                    "title": "Execution summary",
+                    "title": "执行摘要",
                     "path": "generated/execution-summary.md",
                     "metadata": {"status": "simulated"},
                 },
@@ -279,7 +279,7 @@ class TaskRunner:
         self.store.append_event(
             task_id,
             "agent.completed",
-            {"agent": "executor", "summary": "Execution artifacts recorded."},
+            {"agent": "executor", "summary": "执行产物已记录。"},
         )
 
     async def _reviewer(self, task_id: str, goal: str) -> bool:
@@ -288,16 +288,16 @@ class TaskRunner:
             self._emit_token(
                 task_id,
                 "reviewer",
-                "Hardware validation is required before this can be marked done.\n",
+                "必须完成硬件验证后，才能把这个任务标记为完成。\n",
             )
             self.gateway.invoke(
                 task_id,
                 "reviewer",
                 "hardware.validation",
                 {
-                    "name": "USB CDC enumeration on physical STM32F103C8T6 board",
+                    "name": "真实 STM32F103C8T6 板子的 USB CDC 枚举",
                     "status": "not_run",
-                    "evidence": "No board, .ioc file, build log, flash log, or host USB enumeration log was provided to this runner.",
+                    "evidence": "当前运行没有提供真实板子、.ioc 文件、构建日志、烧录日志或主机 USB 枚举日志。",
                 },
             )
             self.gateway.invoke(
@@ -306,42 +306,42 @@ class TaskRunner:
                 "review.record",
                 {
                     "status": "needs_human",
-                    "summary": "Implementation intent is recorded, but board-specific assumptions and hardware validation are unresolved.",
+                    "summary": "实现意图已经记录，但板级假设和硬件验证尚未解决。",
                     "checks": [
                         {
                             "name": "official_sources",
                             "status": "warn",
-                            "detail": "Only project requirements are recorded so far; silicon/tool facts must be pulled from official docs before code generation.",
+                            "detail": "目前只记录了项目要求；生成代码前必须从官方文档获取芯片和工具事实。",
                         },
                         {
                             "name": "hardware_success",
                             "status": "fail",
-                            "detail": "USB CDC enumeration has not been tested on the physical board.",
+                            "detail": "尚未在真实板子上测试 USB CDC 枚举。",
                         },
                     ],
-                    "retry_instructions": "Provide the .ioc path and board validation evidence, or approve the explicit assumptions to produce a draft-only final report.",
+                    "retry_instructions": "请提供 .ioc 路径和板级验证证据；或者批准显式假设，仅生成草案性质的最终报告。",
                 },
             )
             self.store.append_event(
                 task_id,
                 "agent.completed",
-                {"agent": "reviewer", "summary": "Needs human approval before Writer."},
+                {"agent": "reviewer", "summary": "进入撰写员前需要人工批准。"},
             )
             return True
 
-        self._emit_token(task_id, "reviewer", "Review passed for workflow smoke run.\n")
+        self._emit_token(task_id, "reviewer", "工作流 smoke 运行审查通过。\n")
         self.gateway.invoke(
             task_id,
             "reviewer",
             "review.record",
             {
                 "status": "passed",
-                "summary": "Smoke workflow produced evidence, tool-call records, and artifacts.",
+                "summary": "Smoke 工作流已经产出证据、工具调用记录和产物。",
                 "checks": [
                     {
                         "name": "audit_records",
                         "status": "pass",
-                        "detail": "The run produced events and persisted task details.",
+                        "detail": "本次运行已产出事件并持久化任务详情。",
                     }
                 ],
             },
@@ -349,13 +349,13 @@ class TaskRunner:
         self.store.append_event(
             task_id,
             "agent.completed",
-            {"agent": "reviewer", "summary": "Review passed."},
+            {"agent": "reviewer", "summary": "审查通过。"},
         )
         return False
 
     async def _writer(self, task_id: str, extra_note: str = "") -> None:
         await self._start_agent(task_id, "writer")
-        self._emit_token(task_id, "writer", "Writing final task report.\n")
+        self._emit_token(task_id, "writer", "正在撰写最终任务报告。\n")
         metadata = {"status": "complete"}
         if extra_note:
             metadata["note"] = extra_note
@@ -365,7 +365,7 @@ class TaskRunner:
             "artifact.create",
             {
                 "kind": "final_report",
-                "title": "Final workflow report",
+                "title": "最终工作流报告",
                 "path": "generated/final-report.md",
                 "metadata": metadata,
             },
@@ -373,7 +373,7 @@ class TaskRunner:
         self.store.append_event(
             task_id,
             "agent.completed",
-            {"agent": "writer", "summary": "Final report recorded."},
+            {"agent": "writer", "summary": "最终报告已记录。"},
         )
 
     async def _run_static_agent(

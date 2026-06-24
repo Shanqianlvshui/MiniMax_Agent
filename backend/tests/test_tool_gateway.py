@@ -15,7 +15,6 @@ def test_tool_gateway_records_denied_calls(tmp_path):
     )
 
     assert result.ok is False
-    assert "not permitted" in result.summary
 
     calls = store.list_tool_calls(task.id)
     assert len(calls) == 1

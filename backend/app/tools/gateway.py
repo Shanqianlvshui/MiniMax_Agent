@@ -47,7 +47,7 @@ class ToolGateway:
         if tool_name not in self._permissions.get(agent_name, set()):
             result = GatewayResult(
                 ok=False,
-                summary=f"{agent_name} is not permitted to call {tool_name}",
+                summary=f"{agent_name} 没有权限调用 {tool_name}",
             )
             self.store.record_tool_call(
                 task_id=task_id,
@@ -81,7 +81,7 @@ class ToolGateway:
             path=args["path"],
             metadata={"summary": args.get("summary", "")},
         )
-        return GatewayResult(ok=True, summary="Plan artifact recorded")
+        return GatewayResult(ok=True, summary="计划产物已记录")
 
     def _record_artifact(self, args: dict[str, Any]) -> GatewayResult:
         self.store.record_artifact(
@@ -91,7 +91,7 @@ class ToolGateway:
             path=args["path"],
             metadata=args.get("metadata", {}),
         )
-        return GatewayResult(ok=True, summary="Artifact recorded")
+        return GatewayResult(ok=True, summary="产物已记录")
 
     def _record_evidence(self, args: dict[str, Any]) -> GatewayResult:
         self.store.record_evidence(
@@ -105,7 +105,7 @@ class ToolGateway:
             confidence=args["confidence"],
             notes=args.get("notes", ""),
         )
-        return GatewayResult(ok=True, summary="Evidence recorded")
+        return GatewayResult(ok=True, summary="证据已记录")
 
     def _record_assumption(self, args: dict[str, Any]) -> GatewayResult:
         self.store.record_assumption(
@@ -117,19 +117,19 @@ class ToolGateway:
             status=args["status"],
             requires_user_confirmation=args["requires_user_confirmation"],
         )
-        return GatewayResult(ok=True, summary="Assumption recorded")
+        return GatewayResult(ok=True, summary="假设已记录")
 
     def _record_cubemx_plan(self, args: dict[str, Any]) -> GatewayResult:
         target = args.get("target", "")
         if target != "stm32f103c8t6_usb_cdc":
             return GatewayResult(
                 ok=False,
-                summary="CubeMX plan target is outside the v1 whitelist",
+                summary="CubeMX 计划目标不在 v1 白名单内",
             )
         self.store.record_artifact(
             task_id=args["task_id"],
             kind="cubemx_plan",
-            title="CubeMX USB CDC configuration intent",
+            title="CubeMX USB CDC 配置意图",
             path="generated/cubemx-intent.json",
             metadata={
                 "target": target,
@@ -139,7 +139,7 @@ class ToolGateway:
         )
         return GatewayResult(
             ok=True,
-            summary="CubeMX configuration intent recorded; no .ioc file was modified",
+            summary="CubeMX 配置意图已记录；未修改 .ioc 文件",
         )
 
     def _record_review(self, args: dict[str, Any]) -> GatewayResult:
@@ -150,7 +150,7 @@ class ToolGateway:
             checks=args["checks"],
             retry_instructions=args.get("retry_instructions"),
         )
-        return GatewayResult(ok=True, summary="Review recorded")
+        return GatewayResult(ok=True, summary="审查结果已记录")
 
     def _record_hardware_validation(self, args: dict[str, Any]) -> GatewayResult:
         self.store.record_hardware_validation(
@@ -159,4 +159,4 @@ class ToolGateway:
             status=args["status"],
             evidence=args["evidence"],
         )
-        return GatewayResult(ok=True, summary="Hardware validation recorded")
+        return GatewayResult(ok=True, summary="硬件验证已记录")

@@ -13,7 +13,7 @@ class LLMClient:
 
 class FakeLLMClient(LLMClient):
     async def stream_planner(self, goal: str) -> AsyncIterator[str]:
-        for token in ["Plan", ": ", goal, "\n", "1. Clarify constraints\n"]:
+        for token in ["计划", "：", goal, "\n", "1. 明确约束和验证标准\n"]:
             await asyncio.sleep(0.01)
             yield token
 
@@ -41,7 +41,7 @@ class MiniMaxAnthropicClient(LLMClient):
             "model": self.model,
             "max_tokens": 1024,
             "stream": True,
-            "system": "You are the Planner agent. Produce a concise implementation plan.",
+            "system": "你是规划 Agent。请用中文输出简洁、可执行、带验证标准的实现计划。",
             "messages": [
                 {
                     "role": "user",

@@ -122,9 +122,35 @@ const API_BASE_URL =
 
 const agents = ["manager", "planner", "researcher", "executor", "reviewer", "writer"];
 
+const agentLabels: Record<string, string> = {
+  manager: "管理器",
+  planner: "规划员",
+  researcher: "研究员",
+  executor: "执行员",
+  reviewer: "审查员",
+  writer: "撰写员",
+};
+
+const statusLabels: Record<string, string> = {
+  idle: "空闲",
+  running: "运行中",
+  waiting_human_input: "等待人工处理",
+  cancel_requested: "正在停止",
+  cancelled: "已停止",
+  completed: "已完成",
+  failed: "失败",
+  pending: "待执行",
+  started: "已启动",
+  active: "执行中",
+  done: "完成",
+  needs_human: "需要人工处理",
+  not_run: "未运行",
+  passed: "通过",
+};
+
 export default function TaskConsole() {
   const [goal, setGoal] = useState(
-    "Develop STM32F103C8T6 USB CDC driver with CubeMX",
+    "基于官方 STM32Cube 工具链，为 STM32F103C8T6 最小系统板开发 USB CDC 驱动",
   );
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [events, setEvents] = useState<TaskEvent[]>([]);
@@ -149,7 +175,7 @@ export default function TaskConsole() {
       });
 
       if (!response.ok) {
-        throw new Error(`Task creation failed with ${response.status}`);
+        throw new Error(`创建任务失败，HTTP ${response.status}`);
       }
 
       const created = (await response.json()) as TaskRecord;
@@ -167,7 +193,7 @@ export default function TaskConsole() {
       });
       subscribeToTaskEvents(created.id);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Task creation failed");
+      setMessage(error instanceof Error ? error.message : "创建任务失败");
     } finally {
       setIsSubmitting(false);
     }
@@ -181,7 +207,7 @@ export default function TaskConsole() {
     setMessage(null);
     const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/details`);
     if (!response.ok) {
-      setMessage(`Refresh failed with ${response.status}`);
+      setMessage(`刷新失败，HTTP ${response.status}`);
       return;
     }
 
@@ -264,7 +290,7 @@ export default function TaskConsole() {
       method: "POST",
     });
     if (!response.ok) {
-      setMessage(`Stop request failed with ${response.status}`);
+      setMessage(`停止任务失败，HTTP ${response.status}`);
       return;
     }
 
@@ -283,7 +309,7 @@ export default function TaskConsole() {
       body: JSON.stringify({ decision, notes: approvalNotes }),
     });
     if (!response.ok) {
-      setMessage(`Approval failed with ${response.status}`);
+      setMessage(`提交人工处理结果失败，HTTP ${response.status}`);
       return;
     }
     await refreshDetails(task.id);
@@ -297,16 +323,16 @@ export default function TaskConsole() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <h1>MiniMax Agent Workflow</h1>
-            <p>Evidence-first multi-agent task console</p>
+            <h1>MiniMax Agent 工作流</h1>
+            <p>证据优先的多 Agent 任务控制台</p>
           </div>
           <span className={`status-pill ${task?.status ?? "idle"}`}>
-            {task?.status ?? "idle"}
+            {formatStatus(task?.status ?? "idle")}
           </span>
         </header>
 
         <form className="task-input" onSubmit={startTask}>
-          <label htmlFor="goal">Task</label>
+          <label htmlFor="goal">任务</label>
           <textarea
             id="goal"
             value={goal}
@@ -315,17 +341,17 @@ export default function TaskConsole() {
           />
           <div className="actions">
             <button disabled={isSubmitting || goal.trim().length === 0} type="submit">
-              {isSubmitting ? "Starting..." : "Start task"}
+              {isSubmitting ? "启动中..." : "启动任务"}
             </button>
             <button disabled={!task} type="button" onClick={() => refreshDetails()}>
-              Refresh
+              刷新
             </button>
             <button
               disabled={!task || task.status !== "running"}
               type="button"
               onClick={requestStop}
             >
-              Stop
+              停止
             </button>
           </div>
         </form>
@@ -333,10 +359,10 @@ export default function TaskConsole() {
         {message ? <p className="message">{message}</p> : null}
 
         <section className="layout-grid">
-          <section className="panel graph-panel" aria-label="Agent graph">
+          <section className="panel graph-panel" aria-label="Agent 状态图">
             <div className="panel-header">
-              <h2>Agent graph</h2>
-              <span className="event-count">{events.length} events</span>
+              <h2>Agent 状态图</h2>
+              <span className="event-count">{events.length} 条事件</span>
             </div>
             <ReactFlowProvider>
               <ReactFlow
@@ -353,9 +379,9 @@ export default function TaskConsole() {
             </ReactFlowProvider>
           </section>
 
-          <section className="panel task-state" aria-label="Task status">
+          <section className="panel task-state" aria-label="任务状态">
             <div className="panel-header">
-              <h2>Task status</h2>
+              <h2>任务状态</h2>
             </div>
             {task ? (
               <dl className="task-details">
@@ -364,54 +390,53 @@ export default function TaskConsole() {
                   <dd>{task.id}</dd>
                 </div>
                 <div>
-                  <dt>Current agent</dt>
-                  <dd>{task.current_agent ?? "None"}</dd>
+                  <dt>当前 Agent</dt>
+                  <dd>{task.current_agent ? formatAgent(task.current_agent) : "无"}</dd>
                 </div>
                 <div>
-                  <dt>Goal</dt>
+                  <dt>目标</dt>
                   <dd>{task.goal}</dd>
                 </div>
                 <div>
-                  <dt>Updated</dt>
+                  <dt>更新时间</dt>
                   <dd>{new Date(task.updated_at).toLocaleString()}</dd>
                 </div>
               </dl>
             ) : (
-              <p className="empty">No task has been started yet.</p>
+              <p className="empty">还没有启动任务。</p>
             )}
           </section>
         </section>
 
         {task?.status === "waiting_human_input" ? (
-          <section className="panel approval-panel" aria-label="Human approval">
+          <section className="panel approval-panel" aria-label="人工处理">
             <div className="panel-header">
-              <h2>Human gate</h2>
-              <span className="badge warn">Reviewer blocked</span>
+              <h2>人工关口</h2>
+              <span className="badge warn">审查员已阻塞</span>
             </div>
             <p>
-              Reviewer did not mark this as complete because hardware-specific facts or
-              board validation are missing.
+              审查员没有把任务标记为完成，因为板级事实或实际硬件验证仍缺失。
             </p>
             <textarea
               value={approvalNotes}
               onChange={(event) => setApprovalNotes(event.target.value)}
               rows={3}
-              placeholder="Approval or rejection notes"
+              placeholder="批准或打回说明"
             />
             <div className="actions">
               <button type="button" onClick={() => sendApproval("approve")}>
-                Approve assumptions
+                批准这些假设
               </button>
               <button type="button" onClick={() => sendApproval("reject")}>
-                Send back
+                打回
               </button>
             </div>
           </section>
         ) : null}
 
-        <section className="panel agent-log" aria-label="Agent logs">
+        <section className="panel agent-log" aria-label="Agent 日志">
           <div className="panel-header">
-            <h2>Agent logs</h2>
+            <h2>Agent 日志</h2>
             <select
               value={selectedAgent}
               onChange={(event) => setSelectedAgent(event.target.value)}
@@ -419,23 +444,23 @@ export default function TaskConsole() {
             >
               {agents.map((agent) => (
                 <option key={agent} value={agent}>
-                  {agent}
+                  {formatAgent(agent)}
                 </option>
               ))}
             </select>
           </div>
-          <pre>{logsByAgent[selectedAgent] || "No log output for this agent yet."}</pre>
+          <pre>{logsByAgent[selectedAgent] || "这个 Agent 还没有日志输出。"}</pre>
         </section>
 
         <section className="detail-grid">
           <RecordPanel
-            title="Tool calls"
-            empty="No tool calls recorded."
+            title="工具调用"
+            empty="还没有记录工具调用。"
             records={detail?.tool_calls ?? []}
             render={(call) => (
               <>
                 <strong>{call.tool_name}</strong>
-                <span>{call.agent_name}</span>
+                <span>{formatAgent(call.agent_name)}</span>
                 <p>{call.result_summary}</p>
                 <code>{JSON.stringify(call.args)}</code>
               </>
@@ -443,12 +468,12 @@ export default function TaskConsole() {
           />
 
           <RecordPanel
-            title="Reviewer"
-            empty="No reviewer result yet."
+            title="审查结果"
+            empty="还没有审查结果。"
             records={latestReview ? [latestReview] : []}
             render={(review) => (
               <>
-                <strong>{review.status}</strong>
+                <strong>{formatStatus(review.status)}</strong>
                 <p>{review.summary}</p>
                 {review.retry_instructions ? <p>{review.retry_instructions}</p> : null}
                 <code>{JSON.stringify(review.checks)}</code>
@@ -457,8 +482,8 @@ export default function TaskConsole() {
           />
 
           <RecordPanel
-            title="Artifacts"
-            empty="No artifacts recorded."
+            title="产物"
+            empty="还没有记录产物。"
             records={detail?.artifacts ?? []}
             render={(artifact) => (
               <>
@@ -470,8 +495,8 @@ export default function TaskConsole() {
           />
 
           <RecordPanel
-            title="Evidence"
-            empty="No evidence recorded."
+            title="证据"
+            empty="还没有记录证据。"
             records={detail?.evidence ?? []}
             render={(evidence) => (
               <>
@@ -483,12 +508,12 @@ export default function TaskConsole() {
           />
 
           <RecordPanel
-            title="Assumptions"
-            empty="No assumptions recorded."
+            title="假设"
+            empty="还没有记录假设。"
             records={detail?.assumptions ?? []}
             render={(assumption) => (
               <>
-                <strong>{assumption.status}</strong>
+                <strong>{formatStatus(assumption.status)}</strong>
                 <p>{assumption.claim}</p>
                 <span>{assumption.risk}</span>
               </>
@@ -496,12 +521,12 @@ export default function TaskConsole() {
           />
 
           <RecordPanel
-            title="Hardware"
-            empty="No hardware validation recorded."
+            title="硬件验证"
+            empty="还没有记录硬件验证。"
             records={detail?.hardware_validations ?? []}
             render={(validation) => (
               <>
-                <strong>{validation.status}</strong>
+                <strong>{formatStatus(validation.status)}</strong>
                 <span>{validation.name}</span>
                 <p>{validation.evidence}</p>
               </>
@@ -509,9 +534,9 @@ export default function TaskConsole() {
           />
         </section>
 
-        <section className="panel event-list" aria-label="Task events">
+        <section className="panel event-list" aria-label="任务事件">
           <div className="panel-header">
-            <h2>Events</h2>
+            <h2>事件</h2>
           </div>
           {events.length > 0 ? (
             <ol>
@@ -524,7 +549,7 @@ export default function TaskConsole() {
               ))}
             </ol>
           ) : (
-            <p className="empty">No events have been received yet.</p>
+            <p className="empty">还没有收到事件。</p>
           )}
         </section>
       </section>
@@ -547,7 +572,7 @@ function RecordPanel<T>({
     <section className="panel record-panel">
       <div className="panel-header">
         <h2>{title}</h2>
-        <span className="event-count">{records.length}</span>
+        <span className="event-count">{records.length} 条</span>
       </div>
       {records.length > 0 ? (
         <ol>
@@ -590,7 +615,7 @@ function buildGraph(
     return {
       id: agent,
       position: { x: index * 190, y: index % 2 === 0 ? 0 : 90 },
-      data: { label: `${agent}\n${state}` },
+      data: { label: `${formatAgent(agent)}\n${formatStatus(state)}` },
       className: `agent-node ${state}`,
       draggable: false,
     };
@@ -605,4 +630,12 @@ function buildGraph(
   }));
 
   return { nodes, edges };
+}
+
+function formatAgent(agent: string): string {
+  return agentLabels[agent] ?? agent;
+}
+
+function formatStatus(status: string): string {
+  return statusLabels[status] ?? status;
 }
