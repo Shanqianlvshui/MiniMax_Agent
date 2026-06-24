@@ -5,6 +5,7 @@ from app.main import create_app
 
 def test_user_can_create_and_read_a_task(tmp_path, monkeypatch):
     monkeypatch.setenv("MINIMAX_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("MINIMAX_AGENT_LLM_MODE", "fake")
     client = TestClient(create_app())
 
     created = client.post("/tasks", json={"goal": "Build a USB CDC demo"}).json()
@@ -24,6 +25,7 @@ def test_user_can_create_and_read_a_task(tmp_path, monkeypatch):
 
 def test_completed_task_cannot_be_cancelled(tmp_path, monkeypatch):
     monkeypatch.setenv("MINIMAX_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("MINIMAX_AGENT_LLM_MODE", "fake")
     client = TestClient(create_app())
     task = client.post("/tasks", json={"goal": "Run the workflow"}).json()
     with client.stream("GET", f"/tasks/{task['id']}/events") as response:

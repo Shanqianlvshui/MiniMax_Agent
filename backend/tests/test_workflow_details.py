@@ -1,6 +1,9 @@
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.llm import LLMClient
+from app.runner import TaskRunner
+from app.storage import TaskStore
 
 
 def test_non_hardware_task_runs_full_agent_sequence(tmp_path, monkeypatch):
@@ -30,6 +33,19 @@ def test_non_hardware_task_runs_full_agent_sequence(tmp_path, monkeypatch):
         "reviewer",
         "writer",
     ]
+    token_agents = {
+        event["payload"]["agent"]
+        for event in detail["events"]
+        if event["type"] == "agent.token"
+    }
+    assert token_agents == {
+        "manager",
+        "planner",
+        "researcher",
+        "executor",
+        "reviewer",
+        "writer",
+    }
     assert {artifact["kind"] for artifact in detail["artifacts"]} >= {
         "plan",
         "execution_summary",
@@ -104,3 +120,28 @@ def test_human_approval_finalizes_waiting_task_without_claiming_hardware_pass(
         for assumption in detail["assumptions"]
     )
     assert detail["artifacts"][-1]["kind"] == "final_report"
+
+
+def test_empty_llm_agent_output_gets_visible_audit_token(tmp_path):
+    class EmptyLLM(LLMClient):
+        async def stream_agent(self, agent_name, system_prompt, user_content):
+            if False:
+                yield agent_name
+
+    store = TaskStore(tmp_path / "tasks.db")
+    task = store.create_task("task-1", "Run empty output fallback")
+    runner = TaskRunner(store, EmptyLLM())
+
+    import asyncio
+
+    output = asyncio.run(
+        runner._run_llm_agent(task.id, "manager", "空输出测试")
+    )
+
+    events = store.list_events(task.id)
+    assert output
+    assert any(event.type == "agent.empty_output" for event in events)
+    assert any(
+        event.type == "agent.token" and event.payload["agent"] == "manager"
+        for event in events
+    )

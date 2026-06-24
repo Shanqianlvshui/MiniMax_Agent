@@ -7,13 +7,30 @@ import httpx
 
 
 class LLMClient:
-    async def stream_planner(self, goal: str) -> AsyncIterator[str]:
+    async def stream_agent(
+        self,
+        agent_name: str,
+        system_prompt: str,
+        user_content: str,
+    ) -> AsyncIterator[str]:
         raise NotImplementedError
 
 
 class FakeLLMClient(LLMClient):
-    async def stream_planner(self, goal: str) -> AsyncIterator[str]:
-        for token in ["计划", "：", goal, "\n", "1. 明确约束和验证标准\n"]:
+    async def stream_agent(
+        self,
+        agent_name: str,
+        system_prompt: str,
+        user_content: str,
+    ) -> AsyncIterator[str]:
+        del system_prompt
+        for token in [
+            f"{agent_name}：",
+            "已读取共享工作流状态。\n",
+            user_content[:120],
+            "\n",
+            "输出：已完成本 Agent 的最小可审计结果。\n",
+        ]:
             await asyncio.sleep(0.01)
             yield token
 
@@ -34,17 +51,20 @@ class MiniMaxAnthropicClient(LLMClient):
         )
         self.thinking_type = os.environ.get("MINIMAX_THINKING", "adaptive")
 
-    async def stream_planner(self, goal: str) -> AsyncIterator[str]:
+    async def stream_agent(
+        self,
+        agent_name: str,
+        system_prompt: str,
+        user_content: str,
+    ) -> AsyncIterator[str]:
         if not self.api_key:
             raise RuntimeError("MiniMax credentials are not configured.")
 
         headers = {
             "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
         }
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-
-        payload = self._planner_payload(goal)
+        payload = self._agent_payload(agent_name, system_prompt, user_content)
 
         url = f"{self.base_url.rstrip('/')}/v1/messages"
         async with httpx.AsyncClient(timeout=60) as client:
@@ -60,21 +80,26 @@ class MiniMaxAnthropicClient(LLMClient):
                     if data.get("type") != "content_block_delta":
                         continue
                     delta = data.get("delta", {})
-                    if delta.get("type") in {"text_delta", "thinking_delta"}:
-                        text = delta.get("text") or delta.get("thinking")
+                    if delta.get("type") == "text_delta":
+                        text = delta.get("text")
                         if text:
                             yield text
 
-    def _planner_payload(self, goal: str) -> dict:
+    def _agent_payload(
+        self,
+        agent_name: str,
+        system_prompt: str,
+        user_content: str,
+    ) -> dict:
         payload = {
             "model": self.model,
             "max_tokens": self.max_output_tokens,
             "stream": True,
-            "system": "你是规划 Agent。请用中文输出简洁、可执行、带验证标准的实现计划。",
+            "system": system_prompt,
             "messages": [
                 {
                     "role": "user",
-                    "content": goal,
+                    "content": user_content,
                 }
             ],
         }
