@@ -295,6 +295,52 @@ class MiniMaxAcpAgent:
             )
             return
 
+        if event.type == "workflow.retry.started":
+            attempt = payload.get("attempt", "?")
+            max_retries = payload.get("max_retries", "?")
+            reason = payload.get("reason", "")
+            self._rewind_completed_agents(session_id, "executor")
+            await self._send_agent_text(
+                session_id,
+                "\n\n**审查打回执行员重试**"
+                f"：第 {attempt}/{max_retries} 次自动重试。\n"
+                f"{reason}\n",
+            )
+            await self._send_workflow_diagram(
+                session_id,
+                current_agent="executor",
+                note="审查员要求执行员带反馈重做",
+            )
+            return
+
+        if event.type == "workflow.retry.exhausted":
+            attempts = payload.get("attempts", "?")
+            await self._send_current_tool_records(session_id)
+            await self._send_agent_text(
+                session_id,
+                f"\n\n**自动重试已用完**：已尝试 {attempts} 次，转入人工处理。\n",
+            )
+            await self._send_workflow_diagram(
+                session_id,
+                current_agent="reviewer",
+                note="自动重试耗尽，等待人工处理",
+            )
+            return
+
+        if event.type == "workflow.rerun.started":
+            reason = payload.get("reason", "")
+            self._rewind_completed_agents(session_id, "planner")
+            await self._send_agent_text(
+                session_id,
+                f"\n\n**人工打回后重跑**：从规划员重新开始。\n{reason}\n",
+            )
+            await self._send_workflow_diagram(
+                session_id,
+                current_agent="planner",
+                note="人工打回，回到规划阶段",
+            )
+            return
+
         if event.type in {"task.completed", "task.failed", "task.cancelled"}:
             await self._send_task_summary(session_id, event)
             return
@@ -344,6 +390,17 @@ class MiniMaxAcpAgent:
                 note=note,
             ),
         )
+
+    def _rewind_completed_agents(self, session_id: str, current_agent: str) -> None:
+        if current_agent not in WORKFLOW_STEPS:
+            return
+        session = self._require_session(session_id)
+        current_index = WORKFLOW_STEPS.index(current_agent)
+        session.completed_agents = {
+            agent
+            for agent in session.completed_agents
+            if WORKFLOW_STEPS.index(agent) < current_index
+        }
 
     async def _send_current_tool_records(self, session_id: str) -> None:
         session = self._require_session(session_id)

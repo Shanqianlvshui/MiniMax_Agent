@@ -12,7 +12,7 @@ from app.adapters.acp_server import (
     extract_prompt_text,
     render_workflow_diagram,
 )
-from app.models import TaskStatus
+from app.models import TaskEvent, TaskStatus, utc_now
 from app.storage import TaskStore
 
 
@@ -188,3 +188,99 @@ def test_acp_hardware_prompt_surfaces_human_approval_gate(tmp_path, monkeypatch)
     assert any("证据" in update.title for update in tools)
     assert any("假设" in update.title for update in tools)
     assert any("硬件验证" in update.title for update in tools)
+
+
+def test_acp_surfaces_retry_and_rerun_workflow_events(tmp_path):
+    client = RecordingClient()
+    agent = MiniMaxAcpAgent(TaskStore(tmp_path / "tasks.db"))
+    agent.on_connect(client)
+    session = asyncio.run(agent.new_session(cwd=str(tmp_path)))
+    state = agent.sessions[session.session_id]
+    state.completed_agents.update(
+        {"manager", "planner", "researcher", "executor", "reviewer"}
+    )
+
+    asyncio.run(
+        agent._send_event(
+            session.session_id,
+            TaskEvent(
+                id=1,
+                task_id="task-1",
+                seq=1,
+                type="workflow.retry.started",
+                payload={
+                    "from": "reviewer",
+                    "to": "executor",
+                    "attempt": 1,
+                    "max_retries": 1,
+                    "reason": "缺少官方来源绑定。",
+                },
+                created_at=utc_now(),
+            ),
+        )
+    )
+
+    retry_text = "".join(update_texts(client))
+    assert "审查打回执行员重试" in retry_text
+    assert "第 1/1 次自动重试" in retry_text
+    assert 'executor["执行员<br/>当前"]' in retry_text
+    assert 'reviewer["审查员<br/>待执行"]' in retry_text
+
+    state.completed_agents.update({"executor", "reviewer"})
+    asyncio.run(
+        agent._send_event(
+            session.session_id,
+            TaskEvent(
+                id=2,
+                task_id="task-1",
+                seq=2,
+                type="workflow.rerun.started",
+                payload={
+                    "from": "human",
+                    "to": "planner",
+                    "reason": "补齐板级假设后重做。",
+                },
+                created_at=utc_now(),
+            ),
+        )
+    )
+
+    rerun_text = "".join(update_texts(client))
+    assert "人工打回后重跑" in rerun_text
+    assert 'manager["管理器<br/>完成"]' in rerun_text
+    assert 'planner["规划员<br/>当前"]' in rerun_text
+    assert 'researcher["研究员<br/>待执行"]' in rerun_text
+
+
+def test_acp_surfaces_retry_exhaustion_event(tmp_path):
+    client = RecordingClient()
+    agent = MiniMaxAcpAgent(TaskStore(tmp_path / "tasks.db"))
+    agent.on_connect(client)
+    session = asyncio.run(agent.new_session(cwd=str(tmp_path)))
+    agent.sessions[session.session_id].completed_agents.update(
+        {"manager", "planner", "researcher", "executor", "reviewer"}
+    )
+
+    asyncio.run(
+        agent._send_event(
+            session.session_id,
+            TaskEvent(
+                id=1,
+                task_id="task-1",
+                seq=1,
+                type="workflow.retry.exhausted",
+                payload={
+                    "from": "reviewer",
+                    "to": "human",
+                    "attempts": 2,
+                    "reason": "仍缺少验证证据。",
+                },
+                created_at=utc_now(),
+            ),
+        )
+    )
+
+    texts = "".join(update_texts(client))
+    assert "自动重试已用完" in texts
+    assert "已尝试 2 次" in texts
+    assert "自动重试耗尽，等待人工处理" in texts

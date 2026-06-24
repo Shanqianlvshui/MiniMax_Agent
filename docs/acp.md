@@ -58,6 +58,9 @@ If the client supports environment variables in its agent config, it can pass
 - text prompt blocks
 - embedded text resources and resource links converted into the task prompt
 - MiniMax workflow token streaming back as ACP session updates
+- Markdown Mermaid workflow diagrams after each agent step and controlled
+  transition, including Reviewer retry, retry exhaustion, and human rejection
+  reruns
 - stored tool calls, artifacts, review results, and hardware validation records
   surfaced as ACP tool-call records
 
