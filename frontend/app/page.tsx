@@ -318,270 +318,340 @@ export default function TaskConsole() {
 
   const graph = useMemo(() => buildGraph(detail, events), [detail, events]);
   const latestReview = detail?.reviews.at(-1);
+  const selectedLog = logsByAgent[selectedAgent] ?? "";
+  const latestEvent = events.at(-1);
 
   return (
     <main className="shell">
       <section className="workspace">
-        <header className="topbar">
-          <div>
-            <h1>MiniMax Agent 工作流</h1>
-            <p>证据优先的多 Agent 任务控制台</p>
+        <aside className="project-sidebar" aria-label="项目列表">
+          <div className="sidebar-top">
+            <span className="sidebar-kicker">项目</span>
+            <h1>MiniMax_Agent</h1>
           </div>
-          <span className={`status-pill ${task?.status ?? "idle"}`}>
-            {formatStatus(task?.status ?? "idle")}
-          </span>
-        </header>
 
-        <form className="task-input" onSubmit={startTask}>
-          <label htmlFor="goal">任务</label>
-          <textarea
-            id="goal"
-            value={goal}
-            onChange={(event) => setGoal(event.target.value)}
-            rows={4}
-          />
-          <div className="actions">
-            <button disabled={isSubmitting || goal.trim().length === 0} type="submit">
-              {isSubmitting ? "启动中..." : "启动任务"}
-            </button>
-            <button disabled={!task} type="button" onClick={() => refreshDetails()}>
-              刷新
-            </button>
+          <div className="sidebar-section">
+            <h2>任务</h2>
             <button
-              disabled={!task || task.status !== "running"}
+              className={`project-item ${task ? "active" : ""}`}
               type="button"
-              onClick={requestStop}
+              onClick={() => {
+                if (task) {
+                  void refreshDetails();
+                }
+              }}
             >
-              停止
+              <span>{task ? formatStatus(task.status) : "未启动"}</span>
+              <strong>{task?.goal ?? "STM32F103C8T6 USB CDC 驱动"}</strong>
             </button>
           </div>
-        </form>
 
-        {message ? <p className="message">{message}</p> : null}
-
-        <section className="layout-grid">
-          <section className="panel graph-panel" aria-label="Agent 状态图">
-            <div className="panel-header">
-              <h2>Agent 状态图</h2>
-              <span className="event-count">{events.length} 条事件</span>
-            </div>
-            <ReactFlowProvider>
-              <ReactFlow
-                nodes={graph.nodes}
-                edges={graph.edges}
-                fitView
-                nodesDraggable={false}
-                nodesConnectable={false}
-                panOnDrag={false}
-                zoomOnScroll={false}
+          <div className="sidebar-section agent-list">
+            <h2>Agent</h2>
+            {agents.map((agent) => (
+              <button
+                className={`project-item compact ${selectedAgent === agent ? "active" : ""}`}
+                key={agent}
+                type="button"
+                onClick={() => setSelectedAgent(agent)}
               >
-                <Background gap={16} />
-              </ReactFlow>
-            </ReactFlowProvider>
+                <span>{formatAgent(agent)}</span>
+                <strong>{logsByAgent[agent] ? "已有输出" : "等待输出"}</strong>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <section className="conversation-pane">
+          <header className="topbar">
+            <div>
+              <h1>MiniMax Agent 工作流</h1>
+              <p>中间处理任务对话，右侧集中看状态、日志和审计</p>
+            </div>
+            <span className={`status-pill ${task?.status ?? "idle"}`}>
+              {formatStatus(task?.status ?? "idle")}
+            </span>
+          </header>
+
+          <section className="panel response-panel" aria-label="对话与信息返回">
+            <div className="panel-header">
+              <h2>对话与信息返回</h2>
+              <span className="event-count">
+                {latestEvent ? `最新事件 #${latestEvent.seq}` : "等待任务"}
+              </span>
+            </div>
+            <div className="chat-feed">
+              <article className="chat-message user">
+                <span>任务</span>
+                <p>{goal}</p>
+              </article>
+              <article className="chat-message agent">
+                <span>{formatAgent(selectedAgent)} 返回</span>
+                <pre>
+                  {selectedLog ||
+                    latestReview?.summary ||
+                    "启动任务后，这里显示选中 Agent 的实时返回内容。"}
+                </pre>
+              </article>
+              {latestReview ? (
+                <article className="chat-message reviewer">
+                  <span>审查结果</span>
+                  <p>{latestReview.summary}</p>
+                </article>
+              ) : null}
+            </div>
           </section>
 
-          <section className="panel task-state" aria-label="任务状态">
-            <div className="panel-header">
-              <h2>任务状态</h2>
-            </div>
-            {task ? (
-              <dl className="task-details">
-                <div>
-                  <dt>ID</dt>
-                  <dd>{task.id}</dd>
-                </div>
-                <div>
-                  <dt>当前 Agent</dt>
-                  <dd>{task.current_agent ? formatAgent(task.current_agent) : "无"}</dd>
-                </div>
-                <div>
-                  <dt>目标</dt>
-                  <dd>{task.goal}</dd>
-                </div>
-                <div>
-                  <dt>更新时间</dt>
-                  <dd>{new Date(task.updated_at).toLocaleString()}</dd>
-                </div>
-              </dl>
-            ) : (
-              <p className="empty">还没有启动任务。</p>
-            )}
-          </section>
-        </section>
-
-        {task?.status === "waiting_human_input" ? (
-          <section className="panel approval-panel" aria-label="人工处理">
-            <div className="panel-header">
-              <h2>人工关口</h2>
-              <span className="badge warn">审查员已阻塞</span>
-            </div>
-            <p>
-              审查员没有把任务标记为完成，因为板级事实或实际硬件验证仍缺失。
-            </p>
+          <form className="task-input" onSubmit={startTask}>
+            <label htmlFor="goal">输入任务</label>
             <textarea
-              value={approvalNotes}
-              onChange={(event) => setApprovalNotes(event.target.value)}
+              id="goal"
+              value={goal}
+              onChange={(event) => setGoal(event.target.value)}
               rows={3}
-              placeholder="批准或打回说明"
             />
             <div className="actions">
-              <button type="button" onClick={() => sendApproval("approve")}>
-                批准这些假设
+              <button disabled={isSubmitting || goal.trim().length === 0} type="submit">
+                {isSubmitting ? "启动中..." : "启动任务"}
               </button>
-              <button type="button" onClick={() => sendApproval("reject")}>
-                打回
+              <button disabled={!task} type="button" onClick={() => refreshDetails()}>
+                刷新
+              </button>
+              <button
+                disabled={!task || task.status !== "running"}
+                type="button"
+                onClick={requestStop}
+              >
+                停止
               </button>
             </div>
+          </form>
+
+          {message ? <p className="message">{message}</p> : null}
+
+          {task?.status === "waiting_human_input" ? (
+            <section className="panel approval-panel" aria-label="人工处理">
+              <div className="panel-header">
+                <h2>人工关口</h2>
+                <span className="badge warn">审查员已阻塞</span>
+              </div>
+              <p>
+                审查员没有把任务标记为完成，因为板级事实或实际硬件验证仍缺失。
+              </p>
+              <textarea
+                value={approvalNotes}
+                onChange={(event) => setApprovalNotes(event.target.value)}
+                rows={3}
+                placeholder="批准或打回说明"
+              />
+              <div className="actions">
+                <button type="button" onClick={() => sendApproval("approve")}>
+                  批准这些假设
+                </button>
+                <button type="button" onClick={() => sendApproval("reject")}>
+                  打回
+                </button>
+              </div>
+            </section>
+          ) : null}
+        </section>
+
+        <aside className="right-rail" aria-label="状态、事件、日志和审计">
+          <section className="layout-grid">
+            <section className="panel graph-panel" aria-label="Agent 状态图">
+              <div className="panel-header">
+                <h2>状态图</h2>
+                <span className="event-count">{events.length} 条事件</span>
+              </div>
+              <ReactFlowProvider>
+                <ReactFlow
+                  nodes={graph.nodes}
+                  edges={graph.edges}
+                  fitView
+                  nodesDraggable={false}
+                  nodesConnectable={false}
+                  panOnDrag={false}
+                  proOptions={{ hideAttribution: true }}
+                  zoomOnScroll={false}
+                >
+                  <Background gap={16} />
+                </ReactFlow>
+              </ReactFlowProvider>
+            </section>
+
+            <section className="panel task-state" aria-label="任务状态">
+              <div className="panel-header">
+                <h2>任务状态</h2>
+              </div>
+              {task ? (
+                <dl className="task-details">
+                  <div>
+                    <dt>ID</dt>
+                    <dd>{task.id}</dd>
+                  </div>
+                  <div>
+                    <dt>当前 Agent</dt>
+                    <dd>{task.current_agent ? formatAgent(task.current_agent) : "无"}</dd>
+                  </div>
+                  <div>
+                    <dt>更新时间</dt>
+                    <dd>{new Date(task.updated_at).toLocaleString()}</dd>
+                  </div>
+                </dl>
+              ) : (
+                <p className="empty">还没有启动任务。</p>
+              )}
+            </section>
           </section>
-        ) : null}
 
-        <section className="panel agent-log" aria-label="Agent 日志">
-          <div className="panel-header">
-            <h2>Agent 日志</h2>
-            <select
-              value={selectedAgent}
-              onChange={(event) => setSelectedAgent(event.target.value)}
-              aria-label="Agent"
-            >
-              {agents.map((agent) => (
-                <option key={agent} value={agent}>
-                  {formatAgent(agent)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <pre>{logsByAgent[selectedAgent] || "这个 Agent 还没有日志输出。"}</pre>
-        </section>
+          <section className="panel event-list" aria-label="任务事件">
+            <div className="panel-header">
+              <h2>事件</h2>
+            </div>
+            {events.length > 0 ? (
+              <ol>
+                {events.map((event) => (
+                  <li key={event.seq}>
+                    <span>{event.seq}</span>
+                    <strong>{event.type}</strong>
+                    <code>{JSON.stringify(event.payload)}</code>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="empty">还没有收到事件。</p>
+            )}
+          </section>
 
-        <section className="panel detail-dock">
-          <div className="panel-header">
-            <h2>审计</h2>
-            <select
-              value={selectedDetailPanel}
-              onChange={(event) => setSelectedDetailPanel(event.target.value)}
-              aria-label="审计面板"
-            >
-              <option value="tools">工具调用</option>
-              <option value="review">审查结果</option>
-              <option value="artifacts">产物</option>
-              <option value="evidence">证据</option>
-              <option value="assumptions">假设</option>
-              <option value="hardware">硬件验证</option>
-            </select>
-          </div>
-          <div className="detail-dock-body">
-            {selectedDetailPanel === "tools" ? (
-              <RecordPanel
-                title="工具调用"
-                empty="还没有记录工具调用。"
-                records={detail?.tool_calls ?? []}
-                render={(call) => (
-                  <>
-                    <strong>{call.tool_name}</strong>
-                    <span>{formatAgent(call.agent_name)}</span>
-                    <p>{call.result_summary}</p>
-                    <code>{JSON.stringify(call.args)}</code>
-                  </>
-                )}
-              />
-            ) : null}
+          <section className="panel agent-log" aria-label="Agent 日志">
+            <div className="panel-header">
+              <h2>日志</h2>
+              <select
+                value={selectedAgent}
+                onChange={(event) => setSelectedAgent(event.target.value)}
+                aria-label="Agent"
+              >
+                {agents.map((agent) => (
+                  <option key={agent} value={agent}>
+                    {formatAgent(agent)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <pre>{selectedLog || "这个 Agent 还没有日志输出。"}</pre>
+          </section>
 
-            {selectedDetailPanel === "review" ? (
-              <RecordPanel
-                title="审查结果"
-                empty="还没有审查结果。"
-                records={latestReview ? [latestReview] : []}
-                render={(review) => (
-                  <>
-                    <strong>{formatStatus(review.status)}</strong>
-                    <p>{review.summary}</p>
-                    {review.retry_instructions ? <p>{review.retry_instructions}</p> : null}
-                    <code>{JSON.stringify(review.checks)}</code>
-                  </>
-                )}
-              />
-            ) : null}
+          <section className="panel detail-dock">
+            <div className="panel-header">
+              <h2>审计</h2>
+              <select
+                value={selectedDetailPanel}
+                onChange={(event) => setSelectedDetailPanel(event.target.value)}
+                aria-label="审计面板"
+              >
+                <option value="tools">工具调用</option>
+                <option value="review">审查结果</option>
+                <option value="artifacts">产物</option>
+                <option value="evidence">证据</option>
+                <option value="assumptions">假设</option>
+                <option value="hardware">硬件验证</option>
+              </select>
+            </div>
+            <div className="detail-dock-body">
+              {selectedDetailPanel === "tools" ? (
+                <RecordPanel
+                  title="工具调用"
+                  empty="还没有记录工具调用。"
+                  records={detail?.tool_calls ?? []}
+                  render={(call) => (
+                    <>
+                      <strong>{call.tool_name}</strong>
+                      <span>{formatAgent(call.agent_name)}</span>
+                      <p>{call.result_summary}</p>
+                      <code>{JSON.stringify(call.args)}</code>
+                    </>
+                  )}
+                />
+              ) : null}
 
-            {selectedDetailPanel === "artifacts" ? (
-              <RecordPanel
-                title="产物"
-                empty="还没有记录产物。"
-                records={detail?.artifacts ?? []}
-                render={(artifact) => (
-                  <>
-                    <strong>{artifact.title}</strong>
-                    <span>{artifact.kind}</span>
-                    <code>{artifact.path}</code>
-                  </>
-                )}
-              />
-            ) : null}
+              {selectedDetailPanel === "review" ? (
+                <RecordPanel
+                  title="审查结果"
+                  empty="还没有审查结果。"
+                  records={latestReview ? [latestReview] : []}
+                  render={(review) => (
+                    <>
+                      <strong>{formatStatus(review.status)}</strong>
+                      <p>{review.summary}</p>
+                      {review.retry_instructions ? <p>{review.retry_instructions}</p> : null}
+                      <code>{JSON.stringify(review.checks)}</code>
+                    </>
+                  )}
+                />
+              ) : null}
 
-            {selectedDetailPanel === "evidence" ? (
-              <RecordPanel
-                title="证据"
-                empty="还没有记录证据。"
-                records={detail?.evidence ?? []}
-                render={(evidence) => (
-                  <>
-                    <strong>{evidence.claim}</strong>
-                    <span>{evidence.source_title}</span>
-                    <p>{evidence.notes}</p>
-                  </>
-                )}
-              />
-            ) : null}
+              {selectedDetailPanel === "artifacts" ? (
+                <RecordPanel
+                  title="产物"
+                  empty="还没有记录产物。"
+                  records={detail?.artifacts ?? []}
+                  render={(artifact) => (
+                    <>
+                      <strong>{artifact.title}</strong>
+                      <span>{artifact.kind}</span>
+                      <code>{artifact.path}</code>
+                    </>
+                  )}
+                />
+              ) : null}
 
-            {selectedDetailPanel === "assumptions" ? (
-              <RecordPanel
-                title="假设"
-                empty="还没有记录假设。"
-                records={detail?.assumptions ?? []}
-                render={(assumption) => (
-                  <>
-                    <strong>{formatStatus(assumption.status)}</strong>
-                    <p>{assumption.claim}</p>
-                    <span>{assumption.risk}</span>
-                  </>
-                )}
-              />
-            ) : null}
+              {selectedDetailPanel === "evidence" ? (
+                <RecordPanel
+                  title="证据"
+                  empty="还没有记录证据。"
+                  records={detail?.evidence ?? []}
+                  render={(evidence) => (
+                    <>
+                      <strong>{evidence.claim}</strong>
+                      <span>{evidence.source_title}</span>
+                      <p>{evidence.notes}</p>
+                    </>
+                  )}
+                />
+              ) : null}
 
-            {selectedDetailPanel === "hardware" ? (
-              <RecordPanel
-                title="硬件验证"
-                empty="还没有记录硬件验证。"
-                records={detail?.hardware_validations ?? []}
-                render={(validation) => (
-                  <>
-                    <strong>{formatStatus(validation.status)}</strong>
-                    <span>{validation.name}</span>
-                    <p>{validation.evidence}</p>
-                  </>
-                )}
-              />
-            ) : null}
-          </div>
-        </section>
+              {selectedDetailPanel === "assumptions" ? (
+                <RecordPanel
+                  title="假设"
+                  empty="还没有记录假设。"
+                  records={detail?.assumptions ?? []}
+                  render={(assumption) => (
+                    <>
+                      <strong>{formatStatus(assumption.status)}</strong>
+                      <p>{assumption.claim}</p>
+                      <span>{assumption.risk}</span>
+                    </>
+                  )}
+                />
+              ) : null}
 
-        <section className="panel event-list" aria-label="任务事件">
-          <div className="panel-header">
-            <h2>事件</h2>
-          </div>
-          {events.length > 0 ? (
-            <ol>
-              {events.map((event) => (
-                <li key={event.seq}>
-                  <span>{event.seq}</span>
-                  <strong>{event.type}</strong>
-                  <code>{JSON.stringify(event.payload)}</code>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="empty">还没有收到事件。</p>
-          )}
-        </section>
+              {selectedDetailPanel === "hardware" ? (
+                <RecordPanel
+                  title="硬件验证"
+                  empty="还没有记录硬件验证。"
+                  records={detail?.hardware_validations ?? []}
+                  render={(validation) => (
+                    <>
+                      <strong>{formatStatus(validation.status)}</strong>
+                      <span>{validation.name}</span>
+                      <p>{validation.evidence}</p>
+                    </>
+                  )}
+                />
+              ) : null}
+            </div>
+          </section>
+        </aside>
       </section>
     </main>
   );
@@ -634,6 +704,15 @@ function buildGraph(
   );
   const current = detail?.task.current_agent;
 
+  const compactPositions = [
+    { x: 0, y: 0 },
+    { x: 130, y: 0 },
+    { x: 130, y: 70 },
+    { x: 0, y: 70 },
+    { x: 0, y: 140 },
+    { x: 130, y: 140 },
+  ];
+
   const nodes: Node[] = agents.map((agent, index) => {
     const state = completed.has(agent)
       ? "done"
@@ -644,7 +723,7 @@ function buildGraph(
           : "pending";
     return {
       id: agent,
-      position: { x: index * 190, y: index % 2 === 0 ? 0 : 90 },
+      position: compactPositions[index] ?? { x: 0, y: index * 70 },
       data: { label: `${formatAgent(agent)}\n${formatStatus(state)}` },
       className: `agent-node ${state}`,
       draggable: false,
