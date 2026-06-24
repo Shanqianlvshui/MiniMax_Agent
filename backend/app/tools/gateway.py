@@ -22,7 +22,7 @@ class ToolGateway:
         self._permissions: dict[str, set[str]] = {
             "manager": {"workflow.skills.select"},
             "planner": {"artifact.plan"},
-            "researcher": {"evidence.record", "assumption.record"},
+            "researcher": {"evidence.record", "assumption.record", "source.lookup"},
             "executor": {"cubemx.plan", "artifact.create"},
             "reviewer": {"review.record", "hardware.validation"},
             "writer": {"artifact.create"},
@@ -36,6 +36,7 @@ class ToolGateway:
             "review.record": self._record_review,
             "hardware.validation": self._record_hardware_validation,
             "workflow.skills.select": self._record_workflow_skills,
+            "source.lookup": self._record_source_lookup,
         }
 
     def invoke(
@@ -101,6 +102,24 @@ class ToolGateway:
         return GatewayResult(
             ok=True,
             summary=f"已选择 {len(skills)} 个 Workflow Skills",
+        )
+
+    def _record_source_lookup(self, args: dict[str, Any]) -> GatewayResult:
+        sources = args.get("sources", [])
+        self.store.record_artifact(
+            task_id=args["task_id"],
+            kind="source_lookup",
+            title=args.get("title", "官方来源候选清单"),
+            path=args.get("path", "generated/source-lookup.json"),
+            metadata={
+                "intent": args.get("intent", ""),
+                "policy": args.get("policy", ""),
+                "sources": sources,
+            },
+        )
+        return GatewayResult(
+            ok=True,
+            summary=f"已记录 {len(sources)} 个官方来源候选",
         )
 
     def _record_artifact(self, args: dict[str, Any]) -> GatewayResult:

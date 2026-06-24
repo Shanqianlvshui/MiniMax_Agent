@@ -110,6 +110,20 @@ def test_stm32_usb_task_requires_human_approval_until_board_facts_are_confirmed(
         call["tool_name"] == "workflow.skills.select" and call["status"] == "ok"
         for call in detail["tool_calls"]
     )
+    source_artifact = next(
+        artifact
+        for artifact in detail["artifacts"]
+        if artifact["kind"] == "source_lookup"
+    )
+    source_titles = {
+        source["title"] for source in source_artifact["metadata"]["sources"]
+    }
+    assert "STM32F103x8/B datasheet" in source_titles
+    assert "RM0008 STM32F10xxx reference manual" in source_titles
+    assert any(
+        call["tool_name"] == "source.lookup" and call["status"] == "ok"
+        for call in detail["tool_calls"]
+    )
     assert detail["reviews"][-1]["status"] == "needs_human"
     assert detail["hardware_validations"][-1]["status"] == "not_run"
     assert any(
@@ -203,6 +217,7 @@ def test_agent_context_includes_applicable_workflow_skills(tmp_path):
     )
 
     assert "Workflow Skills" in planner_context
+    assert "输出协议" in planner_context
     assert "Skill Router" in planner_context
     assert "TDD Feedback Loop" in planner_context
     assert "Evidence First Research" in researcher_context

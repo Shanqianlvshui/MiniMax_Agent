@@ -313,6 +313,13 @@ Search priority:
 5. Third-party sources as clues only
 ```
 
+The current runner includes a controlled source registry for the first
+STM32F103C8T6 USB CDC slice. Researcher may call `source.lookup` to record
+official source candidates such as the ST datasheet, RM0008 reference manual,
+STM32CubeF1 firmware package, and STM32CubeMX user manual. A source candidate
+is not treated as extracted evidence until a later tool downloads or reads the
+source and binds a specific section/page to a claim.
+
 ## Assumption Ledger
 
 Assumptions are stored separately:

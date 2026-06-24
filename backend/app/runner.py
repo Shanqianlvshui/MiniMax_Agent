@@ -1,5 +1,6 @@
 from .llm import LLMClient
 from .models import TaskStatus
+from .source_registry import source_lookup
 from .storage import TaskStore
 from .tools.gateway import ToolGateway
 from .workflow_skills import (
@@ -45,6 +46,15 @@ AGENT_PROMPTS = {
         "最终必须输出 3 到 8 行可见中文文本，不能只输出 thinking。"
     ),
 }
+
+OUTPUT_PROTOCOL = (
+    "输出协议：必须使用以下 4 个小节，每节最多 3 条：\n"
+    "1. 已验证事实：只写来自用户输入、已记录证据或已执行工具的事实。\n"
+    "2. 待查证：列出需要官方资料、日志或实测确认的点。\n"
+    "3. 显式假设：列出临时假设；没有则写“无”。\n"
+    "4. 下一步：只写当前 Agent 允许推动的后续动作。\n"
+    "禁止把猜测写成事实；禁止因为常识或模型记忆声称硬件已成功。"
+)
 
 
 class TaskRunner:
@@ -222,9 +232,10 @@ class TaskRunner:
         self.store.append_event(task_id, "agent.started", {"agent": agent_name})
 
         output: list[str] = []
+        system_prompt = "\n".join([AGENT_PROMPTS[agent_name], OUTPUT_PROTOCOL])
         async for token in self.llm.stream_agent(
             agent_name,
-            AGENT_PROMPTS[agent_name],
+            system_prompt,
             user_content,
         ):
             output.append(token)
@@ -298,6 +309,19 @@ class TaskRunner:
         researcher_output: str,
     ) -> None:
         if self._is_stm32_usb_goal(goal):
+            official_sources = source_lookup(goal)
+            self.gateway.invoke(
+                task_id,
+                "researcher",
+                "source.lookup",
+                {
+                    "title": "STM32F103C8T6 USB CDC 官方来源候选清单",
+                    "path": "generated/stm32-usb-cdc-sources.json",
+                    "intent": goal,
+                    "policy": "官方或一手来源优先；候选清单不等于已摘录证据。",
+                    "sources": [source.to_record() for source in official_sources],
+                },
+            )
             self.gateway.invoke(
                 task_id,
                 "researcher",
@@ -439,7 +463,7 @@ class TaskRunner:
                         {
                             "name": "official_sources",
                             "status": "warn",
-                            "detail": "目前只记录了项目要求；生成代码前必须从官方文档获取芯片和工具事实。",
+                            "detail": "已记录官方来源候选清单，但尚未下载/摘录具体章节并绑定到每个芯片/工具事实。",
                         },
                         {
                             "name": "hardware_success",
@@ -518,6 +542,7 @@ class TaskRunner:
                 f"审查记录数：{review_count}",
                 f"硬件验证记录数：{hardware_count}",
                 format_skill_context(skills or [], agent_name),
+                OUTPUT_PROTOCOL,
                 "上一个 Agent 输出摘要：",
                 prior_output[:2000],
                 "约束：不要声称未验证硬件已经成功；硬件事实必须有官方来源或实测证据。",
