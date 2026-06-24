@@ -67,7 +67,7 @@ POST /tasks/{id}/human-input
 
 FastAPI owns lifecycle, persistence, cancellation, approvals, and SSE.
 
-LangGraph owns workflow transitions for a single task run.
+The orchestrator owns workflow transitions for a single task run.
 
 Approval gates are persisted as task states. The graph is not expected to stay alive in memory while waiting for the user.
 
@@ -87,13 +87,25 @@ Manager
 Reviewer conditional edges:
 
 ```text
-pass        -> Writer
-fail        -> Executor if retry_count < 2
-fail        -> needs_human if retry_count >= 2
+passed      -> Writer
+retry       -> Executor if retry_count < MAX_REVIEW_RETRIES
+retry       -> waiting_human_input if retries are exhausted
 needs_human -> waiting_human_input
 ```
 
-Automatic retries return to Executor with targeted retry instructions. They do not rerun Planner/Researcher unless a human decision requests it.
+V1 currently allows one automatic Executor retry after Reviewer asks for a retry.
+Automatic retries return to Executor with targeted retry instructions. They do not
+rerun Planner/Researcher unless a human decision requests it.
+
+Human approval edges:
+
+```text
+approve -> Writer
+reject  -> Planner -> Researcher -> Executor -> Reviewer
+```
+
+All dynamic edges are orchestrator-owned. Agents can recommend a retry or a
+human gate, but they cannot choose arbitrary next nodes or bypass evidence gates.
 
 ## Workflow Skills
 
@@ -383,6 +395,9 @@ tool.failed
 evidence.created
 assumption.created
 approval.required
+workflow.retry.started
+workflow.retry.exhausted
+workflow.rerun.started
 review.completed
 artifact.created
 hardware.validation_updated

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from .llm import LLMClient
 from .models import TaskStatus
 from .source_registry import source_lookup
@@ -13,6 +15,11 @@ from .workflow_skills import (
 
 
 AGENT_SEQUENCE = ["manager", "planner", "researcher", "executor", "reviewer", "writer"]
+ReviewDecision = Literal["passed", "retry", "needs_human"]
+REVIEW_PASSED: ReviewDecision = "passed"
+REVIEW_RETRY: ReviewDecision = "retry"
+REVIEW_NEEDS_HUMAN: ReviewDecision = "needs_human"
+MAX_REVIEW_RETRIES = 1
 
 AGENT_PROMPTS = {
     "manager": (
@@ -79,51 +86,29 @@ class TaskRunner:
             if self._should_stop(task_id):
                 return
 
-            planner_output = await self._run_llm_agent(
+            planning = await self._run_planning_and_research(
                 task_id,
-                "planner",
-                self._agent_context(task_id, task.goal, "planner", manager_output, skills),
+                task.goal,
+                skills,
+                manager_output,
             )
-            self._record_planner_artifact(task_id, planner_output)
+            if planning is None or self._should_stop(task_id):
+                return
+            _planner_output, researcher_output = planning
+
+            decision = await self._run_execution_review_loop(
+                task_id,
+                task.goal,
+                skills,
+                researcher_output,
+            )
             if self._should_stop(task_id):
                 return
-
-            researcher_output = await self._run_llm_agent(
-                task_id,
-                "researcher",
-                self._agent_context(task_id, task.goal, "researcher", planner_output, skills),
-            )
-            self._record_researcher_outputs(task_id, task.goal, researcher_output)
-            if self._should_stop(task_id):
-                return
-
-            executor_output = await self._run_llm_agent(
-                task_id,
-                "executor",
-                self._agent_context(task_id, task.goal, "executor", researcher_output, skills),
-            )
-            self._record_executor_outputs(task_id, task.goal, executor_output)
-            if self._should_stop(task_id):
-                return
-
-            reviewer_output = await self._run_llm_agent(
-                task_id,
-                "reviewer",
-                self._agent_context(task_id, task.goal, "reviewer", executor_output, skills),
-            )
-            should_wait = self._record_reviewer_outputs(task_id, task.goal, reviewer_output)
-            if should_wait:
-                self.store.set_waiting_for_human(task_id, "reviewer")
-                self.store.append_event(
+            if decision != REVIEW_PASSED:
+                self._request_human_approval(
                     task_id,
-                    "approval.required",
-                    {
-                        "agent": "reviewer",
-                        "reason": "审查员发现仍有未验证的硬件假设。",
-                    },
+                    "审查员发现仍有未验证的问题，需要人工确认后继续。",
                 )
-                return
-            if self._should_stop(task_id):
                 return
 
             await self._writer(task_id, task.goal)
@@ -148,6 +133,133 @@ class TaskRunner:
             }:
                 self.store.set_current_agent(task_id, None)
 
+    async def _run_planning_and_research(
+        self,
+        task_id: str,
+        goal: str,
+        skills: list[WorkflowSkill],
+        prior_output: str,
+    ) -> tuple[str, str] | None:
+        planner_output = await self._run_llm_agent(
+            task_id,
+            "planner",
+            self._agent_context(task_id, goal, "planner", prior_output, skills),
+        )
+        self._record_planner_artifact(task_id, planner_output)
+        if self._should_stop(task_id):
+            return None
+
+        researcher_output = await self._run_llm_agent(
+            task_id,
+            "researcher",
+            self._agent_context(task_id, goal, "researcher", planner_output, skills),
+        )
+        self._record_researcher_outputs(task_id, goal, researcher_output)
+        if self._should_stop(task_id):
+            return None
+
+        return planner_output, researcher_output
+
+    async def _run_execution_review_loop(
+        self,
+        task_id: str,
+        goal: str,
+        skills: list[WorkflowSkill],
+        researcher_output: str,
+        retry_note: str = "",
+    ) -> ReviewDecision:
+        current_retry_note = retry_note
+        for retry_attempt in range(MAX_REVIEW_RETRIES + 1):
+            executor_prior = researcher_output
+            if current_retry_note:
+                executor_prior = "\n\n".join(
+                    [
+                        researcher_output,
+                        "审查反馈，要求执行员重做：",
+                        current_retry_note,
+                    ]
+                )
+
+            executor_output = await self._run_llm_agent(
+                task_id,
+                "executor",
+                self._agent_context(task_id, goal, "executor", executor_prior, skills),
+            )
+            self._record_executor_outputs(task_id, goal, executor_output)
+            if self._should_stop(task_id):
+                return REVIEW_NEEDS_HUMAN
+
+            reviewer_output = await self._run_llm_agent(
+                task_id,
+                "reviewer",
+                self._agent_context(task_id, goal, "reviewer", executor_output, skills),
+            )
+            decision = self._record_reviewer_outputs(
+                task_id,
+                goal,
+                reviewer_output,
+                retry_attempt=retry_attempt,
+            )
+            if decision != REVIEW_RETRY:
+                return decision
+
+            if retry_attempt >= MAX_REVIEW_RETRIES:
+                self.store.record_review(
+                    task_id=task_id,
+                    status="needs_human",
+                    summary="审查重试次数已用完，需要人工处理。",
+                    checks=[
+                        {
+                            "name": "retry_budget",
+                            "status": "fail",
+                            "detail": f"已尝试 {retry_attempt + 1} 次执行/审查循环。",
+                        },
+                        {
+                            "name": "reviewer_agent_output",
+                            "status": "recorded",
+                            "detail": reviewer_output[:800],
+                        },
+                    ],
+                    retry_instructions="请人工批准、打回并补充说明，或补充缺失证据后继续。",
+                )
+                self.store.append_event(
+                    task_id,
+                    "workflow.retry.exhausted",
+                    {
+                        "from": "reviewer",
+                        "to": "human",
+                        "attempts": retry_attempt + 1,
+                        "reason": reviewer_output[:800],
+                    },
+                )
+                return REVIEW_NEEDS_HUMAN
+
+            current_retry_note = reviewer_output[:1200]
+            self.store.append_event(
+                task_id,
+                "workflow.retry.started",
+                {
+                    "from": "reviewer",
+                    "to": "executor",
+                    "attempt": retry_attempt + 1,
+                    "max_retries": MAX_REVIEW_RETRIES,
+                    "reason": current_retry_note,
+                },
+            )
+
+        return REVIEW_NEEDS_HUMAN
+
+    def _request_human_approval(self, task_id: str, reason: str) -> None:
+        self.store.set_waiting_for_human(task_id, "reviewer")
+        self.store.append_event(
+            task_id,
+            "approval.required",
+            {
+                "agent": "reviewer",
+                "reason": reason,
+            },
+        )
+
     async def finalize_after_approval(
         self,
         task_id: str,
@@ -164,25 +276,64 @@ class TaskRunner:
             {"decision": decision, "notes": notes},
         )
         if decision == "reject":
+            rerun_note = notes or "人工打回，要求重新规划并重新执行。"
             self.store.record_review(
                 task_id=task_id,
                 status="rejected_by_human",
-                summary="人工审查打回了当前运行。",
+                summary="人工审查打回了当前运行，编排器将回到规划阶段。",
                 checks=[
                     {
                         "name": "human_gate",
                         "status": "fail",
-                        "detail": notes or "没有提供打回说明。",
+                        "detail": rerun_note,
                     }
                 ],
-                retry_instructions=notes or "请修改任务指令后重新运行。",
+                retry_instructions=rerun_note,
             )
-            self.store.fail_task(task_id, "人工审查打回了当前运行。")
+            self.store.resume_task(task_id, "planner")
             self.store.append_event(
                 task_id,
-                "task.failed",
-                {"error": "人工审查打回了当前运行。"},
+                "workflow.rerun.started",
+                {
+                    "from": "human",
+                    "to": "planner",
+                    "reason": rerun_note,
+                },
             )
+            skills = self._skills_from_artifacts(task_id)
+            if not skills:
+                skills = self._select_and_record_skills(task_id, task.goal)
+            planning = await self._run_planning_and_research(
+                task_id,
+                task.goal,
+                skills,
+                f"人工打回说明：{rerun_note}",
+            )
+            if planning is None or self._should_stop(task_id):
+                return
+            _planner_output, researcher_output = planning
+            review_decision = await self._run_execution_review_loop(
+                task_id,
+                task.goal,
+                skills,
+                researcher_output,
+                retry_note=rerun_note,
+            )
+            if self._should_stop(task_id):
+                return
+            if review_decision != REVIEW_PASSED:
+                self._request_human_approval(
+                    task_id,
+                    "人工打回后的重跑仍有审查问题，需要再次处理。",
+                )
+                return
+            await self._writer(
+                task_id,
+                task.goal,
+                extra_note=f"本次输出来自人工打回后的重跑。打回说明：{rerun_note}",
+            )
+            self.store.complete_task(task_id)
+            self.store.append_event(task_id, "task.completed", {"status": "completed"})
             return
 
         self.store.confirm_pending_assumptions(task_id)
@@ -440,7 +591,8 @@ class TaskRunner:
         task_id: str,
         goal: str,
         reviewer_output: str,
-    ) -> bool:
+        retry_attempt: int = 0,
+    ) -> ReviewDecision:
         if self._is_stm32_usb_goal(goal):
             self.gateway.invoke(
                 task_id,
@@ -479,7 +631,7 @@ class TaskRunner:
                     "retry_instructions": "请提供 .ioc 路径和板级验证证据；或者批准显式假设，仅生成草案性质的最终报告。",
                 },
             )
-            return True
+            return REVIEW_NEEDS_HUMAN
 
         self.gateway.invoke(
             task_id,
@@ -499,10 +651,15 @@ class TaskRunner:
                         "status": "recorded",
                         "detail": reviewer_output[:800],
                     },
+                    {
+                        "name": "retry_attempt",
+                        "status": "recorded",
+                        "detail": str(retry_attempt),
+                    },
                 ],
             },
         )
-        return False
+        return REVIEW_PASSED
 
     def _agent_context(
         self,

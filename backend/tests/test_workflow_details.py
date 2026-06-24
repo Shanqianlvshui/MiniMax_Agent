@@ -1,8 +1,9 @@
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.llm import LLMClient
-from app.runner import TaskRunner
+from app.llm import FakeLLMClient, LLMClient
+from app.models import TaskStatus
+from app.runner import REVIEW_PASSED, REVIEW_RETRY, TaskRunner
 from app.storage import TaskStore
 
 
@@ -168,6 +169,165 @@ def test_human_approval_finalizes_waiting_task_without_claiming_hardware_pass(
         for assumption in detail["assumptions"]
     )
     assert detail["artifacts"][-1]["kind"] == "final_report"
+
+
+def test_retryable_review_returns_to_executor_before_writer(tmp_path):
+    class RetryOnceRunner(TaskRunner):
+        def __init__(self, store, llm):
+            super().__init__(store, llm)
+            self.review_count = 0
+
+        def _record_reviewer_outputs(
+            self,
+            task_id,
+            goal,
+            reviewer_output,
+            retry_attempt=0,
+        ):
+            self.review_count += 1
+            if self.review_count == 1:
+                self.store.record_review(
+                    task_id=task_id,
+                    status="retry",
+                    summary="审查员要求执行员修正一次。",
+                    checks=[
+                        {
+                            "name": "simulated_retry",
+                            "status": "fail",
+                            "detail": reviewer_output[:120],
+                        }
+                    ],
+                    retry_instructions="重新执行并保留审查反馈。",
+                )
+                return REVIEW_RETRY
+            self.store.record_review(
+                task_id=task_id,
+                status="passed",
+                summary="重试后通过。",
+                checks=[
+                    {
+                        "name": "retry_attempt",
+                        "status": "pass",
+                        "detail": str(retry_attempt),
+                    }
+                ],
+            )
+            return REVIEW_PASSED
+
+    store = TaskStore(tmp_path / "tasks.db")
+    task = store.create_task("task-1", "Run retryable workflow smoke test")
+    runner = RetryOnceRunner(store, FakeLLMClient())
+
+    import asyncio
+
+    asyncio.run(runner.run_task(task.id))
+
+    detail = store.task_detail(task.id)
+    assert detail is not None
+    assert detail.task.status == TaskStatus.COMPLETED
+    started_agents = [
+        event.payload["agent"]
+        for event in detail.events
+        if event.type == "agent.started"
+    ]
+    assert started_agents == [
+        "manager",
+        "planner",
+        "researcher",
+        "executor",
+        "reviewer",
+        "executor",
+        "reviewer",
+        "writer",
+    ]
+    assert any(event.type == "workflow.retry.started" for event in detail.events)
+    assert [review.status for review in detail.reviews][-2:] == ["retry", "passed"]
+
+
+def test_retry_exhaustion_records_human_review_gate(tmp_path):
+    class AlwaysRetryRunner(TaskRunner):
+        def _record_reviewer_outputs(
+            self,
+            task_id,
+            goal,
+            reviewer_output,
+            retry_attempt=0,
+        ):
+            self.store.record_review(
+                task_id=task_id,
+                status="retry",
+                summary="审查员仍要求重试。",
+                checks=[
+                    {
+                        "name": "simulated_retry",
+                        "status": "fail",
+                        "detail": str(retry_attempt),
+                    }
+                ],
+                retry_instructions="继续重做。",
+            )
+            return REVIEW_RETRY
+
+    store = TaskStore(tmp_path / "tasks.db")
+    task = store.create_task("task-1", "Run retry exhaustion workflow smoke test")
+    runner = AlwaysRetryRunner(store, FakeLLMClient())
+
+    import asyncio
+
+    asyncio.run(runner.run_task(task.id))
+
+    detail = store.task_detail(task.id)
+    assert detail is not None
+    assert detail.task.status == TaskStatus.WAITING_HUMAN_INPUT
+    assert [review.status for review in detail.reviews][-3:] == [
+        "retry",
+        "retry",
+        "needs_human",
+    ]
+    assert any(event.type == "workflow.retry.exhausted" for event in detail.events)
+    assert any(event.type == "approval.required" for event in detail.events)
+
+
+def test_human_rejection_reruns_from_planner_instead_of_failing(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("MINIMAX_AGENT_DB_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("MINIMAX_AGENT_LLM_MODE", "fake")
+    client = TestClient(create_app())
+
+    task = client.post(
+        "/tasks",
+        json={"goal": "Develop STM32F103C8T6 USB CDC driver with CubeMX"},
+    ).json()
+    with client.stream("GET", f"/tasks/{task['id']}/events") as response:
+        assert response.status_code == 200
+        list(response.iter_lines())
+
+    response = client.post(
+        f"/tasks/{task['id']}/approval",
+        json={"decision": "reject", "notes": "补齐官方来源和板级假设后重做。"},
+    )
+
+    assert response.status_code == 200
+
+    detail = client.get(f"/tasks/{task['id']}/details").json()
+    started_agents = [
+        event["payload"]["agent"]
+        for event in detail["events"]
+        if event["type"] == "agent.started"
+    ]
+
+    assert detail["task"]["status"] == "waiting_human_input"
+    assert detail["reviews"][-1]["status"] == "needs_human"
+    assert "task.failed" not in {event["type"] for event in detail["events"]}
+    assert any(
+        event["type"] == "workflow.rerun.started"
+        for event in detail["events"]
+    )
+    assert started_agents.count("planner") == 2
+    assert started_agents.count("executor") == 2
+    assert started_agents.count("reviewer") == 2
 
 
 def test_empty_llm_agent_output_gets_visible_audit_token(tmp_path):
