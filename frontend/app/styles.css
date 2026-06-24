@@ -161,6 +161,7 @@ button:disabled {
 
 .conversation-pane {
   grid-area: conversation;
+  position: relative;
   display: grid;
   grid-template-rows: 54px minmax(0, 1fr) 130px;
   gap: 10px;
@@ -499,17 +500,39 @@ textarea {
 }
 
 .approval-panel {
-  position: fixed;
-  inset: auto 16px 16px auto;
+  position: absolute;
+  inset: auto 10px 150px 10px;
   z-index: 15;
-  width: min(520px, calc(100vw - 32px));
+  max-height: min(360px, calc(100% - 190px));
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+  overflow: auto;
 }
 
-.approval-panel p {
-  margin: 0 0 12px;
+.approval-review {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.approval-review span {
   color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.approval-review pre {
+  margin: 0;
+  max-height: 150px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  padding: 10px;
+  color: var(--text);
+  font-family: inherit;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .approval-panel textarea {
@@ -663,6 +686,11 @@ textarea {
   .conversation-pane {
     grid-template-rows: 46px minmax(0, 1fr) 150px;
     padding: 8px;
+  }
+
+  .approval-panel {
+    inset: auto 8px 166px 8px;
+    max-height: min(360px, calc(100% - 210px));
   }
 
   .topbar {

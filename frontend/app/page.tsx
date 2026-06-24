@@ -329,6 +329,13 @@ export default function TaskConsole() {
   const latestReview = detail?.reviews.at(-1);
   const selectedLog = logsByAgent[selectedAgent] ?? "";
   const latestEvent = events.at(-1);
+  const latestApprovalEvent = [...events]
+    .reverse()
+    .find((event) => event.type === "approval.required");
+  const approvalReviewText =
+    latestReview?.summary ??
+    latestApprovalEvent?.payload.reason ??
+    "审查员没有把任务标记为完成，因为板级事实或实际硬件验证仍缺失。";
   const conversationMessages = useMemo(
     () => buildConversation(task?.goal ?? goal, events, latestReview),
     [events, goal, latestReview, task?.goal],
@@ -446,9 +453,16 @@ export default function TaskConsole() {
                 <h2>人工关口</h2>
                 <span className="badge warn">审查员已阻塞</span>
               </div>
-              <p>
-                审查员没有把任务标记为完成，因为板级事实或实际硬件验证仍缺失。
-              </p>
+              <div className="approval-review">
+                <span>审查员要你确认</span>
+                <pre>{approvalReviewText}</pre>
+                {latestReview?.retry_instructions ? (
+                  <>
+                    <span>打回后重试要求</span>
+                    <pre>{latestReview.retry_instructions}</pre>
+                  </>
+                ) : null}
+              </div>
               <textarea
                 value={approvalNotes}
                 onChange={(event) => setApprovalNotes(event.target.value)}
