@@ -163,7 +163,7 @@ button:disabled {
   grid-area: conversation;
   position: relative;
   display: grid;
-  grid-template-rows: 54px minmax(0, 1fr) 130px;
+  grid-template-rows: 54px minmax(0, 1fr) 136px;
   gap: 10px;
   min-width: 0;
   min-height: 0;
@@ -219,7 +219,6 @@ button:disabled {
   color: var(--danger);
 }
 
-.task-input,
 .panel {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -229,12 +228,16 @@ button:disabled {
 }
 
 .task-input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 168px;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(68px, 1fr) auto;
   gap: 8px 12px;
   margin: 0;
-  min-height: 0;
 }
 
 .task-input label {
@@ -244,14 +247,25 @@ button:disabled {
 }
 
 .task-input .actions {
-  grid-column: 2;
+  grid-column: 1 / -1;
   grid-row: 2;
-  flex-direction: column;
-  justify-content: stretch;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.task-input .actions span {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .task-input .actions button {
-  width: 100%;
+  min-width: 86px;
+}
+
+.composer textarea {
+  height: 100%;
+  min-height: 68px;
 }
 
 textarea {
@@ -299,6 +313,7 @@ textarea {
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
+  padding: 2px 0 0;
 }
 
 .chat-feed {
@@ -307,7 +322,7 @@ textarea {
   gap: 12px;
   min-height: 0;
   overflow: auto;
-  padding: 2px 4px 2px 0;
+  padding: 18px 18px 22px;
 }
 
 .chat-message {
@@ -321,20 +336,26 @@ textarea {
 }
 
 .chat-message.user {
+  justify-self: end;
+  max-width: min(86%, 760px);
   background: #111923;
 }
 
 .chat-message.agent {
+  justify-self: start;
   border-color: #31495c;
   background: #101923;
 }
 
 .chat-message.system {
+  justify-self: center;
+  max-width: min(86%, 760px);
   border-color: #35465a;
   background: #121922;
 }
 
 .chat-message.reviewer {
+  justify-self: start;
   border-color: #4c422e;
   background: #1d1a13;
 }
@@ -501,7 +522,7 @@ textarea {
 
 .approval-panel {
   position: absolute;
-  inset: auto 10px 150px 10px;
+  inset: auto 10px 156px 10px;
   z-index: 15;
   max-height: min(360px, calc(100% - 190px));
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);

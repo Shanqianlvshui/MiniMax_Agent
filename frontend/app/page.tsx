@@ -400,13 +400,7 @@ export default function TaskConsole() {
             </span>
           </header>
 
-          <section className="panel response-panel" aria-label="对话与信息返回">
-            <div className="panel-header">
-              <h2>对话与信息返回</h2>
-              <span className="event-count">
-                {latestEvent ? `最新事件 #${latestEvent.seq}` : "等待任务"}
-              </span>
-            </div>
+          <section className="response-panel" aria-label="对话">
             <div className="chat-feed" ref={chatFeedRef}>
               {conversationMessages.map((chatMessage) => (
                 <article className={`chat-message ${chatMessage.kind}`} key={chatMessage.id}>
@@ -420,15 +414,17 @@ export default function TaskConsole() {
             </div>
           </section>
 
-          <form className="task-input" onSubmit={startTask}>
-            <label htmlFor="goal">输入任务</label>
+          <form className="task-input composer" onSubmit={startTask}>
             <textarea
               id="goal"
+              aria-label="输入任务"
               value={goal}
               onChange={(event) => setGoal(event.target.value)}
+              placeholder="要求后续变更"
               rows={3}
             />
             <div className="actions">
+              <span>{latestEvent ? `最新事件 #${latestEvent.seq}` : "等待任务"}</span>
               <button disabled={isSubmitting || goal.trim().length === 0} type="submit">
                 {isSubmitting ? "启动中..." : "启动任务"}
               </button>
