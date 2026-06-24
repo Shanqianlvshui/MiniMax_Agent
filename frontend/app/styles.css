@@ -18,6 +18,11 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   background: var(--background);
@@ -26,6 +31,7 @@ body {
     Arial,
     Helvetica,
     sans-serif;
+  overflow: hidden;
 }
 
 button,
@@ -57,32 +63,46 @@ button:disabled {
 }
 
 .shell {
-  min-height: 100vh;
-  padding: 24px;
+  height: 100vh;
+  overflow: hidden;
+  padding: 12px;
 }
 
 .workspace {
-  width: min(1420px, 100%);
+  width: min(1520px, 100%);
+  height: 100%;
   margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(520px, 1.35fr) minmax(420px, 1fr) minmax(300px, 0.72fr);
+  grid-template-rows: 48px 118px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "topbar topbar topbar"
+    "task task task"
+    "flow flow detail"
+    "log events detail";
+  gap: 10px;
+  min-height: 0;
 }
 
 .topbar {
+  grid-area: topbar;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 18px;
+  min-height: 0;
 }
 
 .topbar h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 22px;
   line-height: 1.2;
 }
 
 .topbar p {
-  margin: 6px 0 0;
+  margin: 3px 0 0;
   color: var(--muted);
+  font-size: 13px;
 }
 
 .status-pill,
@@ -118,29 +138,35 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  padding: 16px;
+  padding: 12px;
+  min-height: 0;
 }
 
 .task-input {
+  grid-area: task;
   display: grid;
-  gap: 10px;
-  margin-bottom: 14px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+  min-height: 0;
 }
 
 .task-input label {
+  grid-column: 1 / -1;
   color: var(--muted);
   font-size: 13px;
 }
 
 textarea {
   width: 100%;
-  resize: vertical;
-  min-height: 86px;
+  resize: none;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface-soft);
   color: var(--text);
-  padding: 11px;
+  padding: 10px;
   line-height: 1.45;
 }
 
@@ -151,28 +177,56 @@ textarea {
 }
 
 .message {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 20;
+  max-width: min(720px, calc(100vw - 32px));
+  border: 1px solid rgba(224, 108, 117, 0.4);
+  border-radius: 6px;
+  background: #2a1519;
+  padding: 8px 10px;
   color: var(--danger);
-  margin: 0 0 14px;
+  margin: 0;
 }
 
 .actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-content: start;
+  justify-content: flex-end;
 }
 
 .layout-grid {
+  grid-area: flow;
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(340px, 0.6fr);
-  gap: 14px;
-  margin-bottom: 14px;
+  gap: 10px;
+  min-height: 0;
+  margin: 0;
 }
 
-.detail-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 14px;
+.detail-dock {
+  grid-area: detail;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+.detail-dock-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.detail-dock-body > .record-panel {
+  flex: 1 1 auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
 }
 
 .panel-header {
@@ -180,12 +234,13 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+  flex: 0 0 auto;
 }
 
 .panel-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .event-count {
@@ -194,11 +249,15 @@ textarea {
 }
 
 .graph-panel {
-  min-height: 320px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .graph-panel .react-flow {
-  height: 260px;
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface-soft);
@@ -232,14 +291,16 @@ textarea {
 
 .task-details {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
+  overflow: auto;
+  min-height: 0;
 }
 
 .task-details div {
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 10px;
+  padding: 8px;
   background: var(--surface-soft);
 }
 
@@ -256,7 +317,11 @@ textarea {
 }
 
 .approval-panel {
-  margin-bottom: 14px;
+  position: fixed;
+  inset: auto 16px 16px auto;
+  z-index: 15;
+  width: min(520px, calc(100vw - 32px));
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
 }
 
 .approval-panel p {
@@ -270,14 +335,20 @@ textarea {
 }
 
 .agent-log {
-  margin-bottom: 14px;
+  grid-area: log;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
 }
 
 .agent-log pre {
   margin: 0;
-  min-height: 128px;
+  min-height: 0;
+  flex: 1 1 auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  overflow: auto;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface-soft);
@@ -292,6 +363,8 @@ textarea {
   list-style: none;
   padding: 0;
   margin: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 .record-panel li,
@@ -305,6 +378,13 @@ textarea {
 .record-panel li {
   display: grid;
   gap: 6px;
+}
+
+.record-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .record-panel strong {
@@ -329,9 +409,17 @@ textarea {
 
 .event-list li {
   display: grid;
-  grid-template-columns: 44px minmax(150px, 220px) 1fr;
-  gap: 10px;
+  grid-template-columns: 42px minmax(120px, 170px) 1fr;
+  gap: 8px;
   align-items: start;
+}
+
+.event-list {
+  grid-area: events;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .event-list span {
@@ -349,21 +437,65 @@ textarea {
 }
 
 @media (max-width: 1080px) {
-  .layout-grid,
-  .detail-grid {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 0.75fr);
+    grid-template-rows: 46px 112px minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "topbar topbar"
+      "task task"
+      "flow detail"
+      "log events";
+  }
+
+  .layout-grid {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr);
   }
 }
 
 @media (max-width: 720px) {
-  .shell {
-    padding: 14px;
+  body {
+    overflow: hidden;
   }
 
-  .topbar,
-  .panel-header {
-    flex-direction: column;
-    align-items: stretch;
+  .shell {
+    padding: 8px;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: 44px 108px minmax(0, 1fr) minmax(0, 0.9fr);
+    grid-template-areas:
+      "topbar"
+      "task"
+      "flow"
+      "log";
+  }
+
+  .detail-dock,
+  .event-list {
+    display: none;
+  }
+
+  .topbar {
+    gap: 10px;
+  }
+
+  .topbar h1 {
+    font-size: 18px;
+  }
+
+  .topbar p {
+    display: none;
+  }
+
+  .task-input {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .actions {
+    justify-content: flex-start;
   }
 
   .event-list li {
@@ -371,6 +503,6 @@ textarea {
   }
 
   .graph-panel .react-flow {
-    height: 340px;
+    min-height: 0;
   }
 }

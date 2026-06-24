@@ -156,6 +156,7 @@ export default function TaskConsole() {
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [logsByAgent, setLogsByAgent] = useState<Record<string, string>>({});
   const [selectedAgent, setSelectedAgent] = useState("planner");
+  const [selectedDetailPanel, setSelectedDetailPanel] = useState("tools");
   const [message, setMessage] = useState<string | null>(null);
   const [approvalNotes, setApprovalNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -452,86 +453,115 @@ export default function TaskConsole() {
           <pre>{logsByAgent[selectedAgent] || "这个 Agent 还没有日志输出。"}</pre>
         </section>
 
-        <section className="detail-grid">
-          <RecordPanel
-            title="工具调用"
-            empty="还没有记录工具调用。"
-            records={detail?.tool_calls ?? []}
-            render={(call) => (
-              <>
-                <strong>{call.tool_name}</strong>
-                <span>{formatAgent(call.agent_name)}</span>
-                <p>{call.result_summary}</p>
-                <code>{JSON.stringify(call.args)}</code>
-              </>
-            )}
-          />
+        <section className="panel detail-dock">
+          <div className="panel-header">
+            <h2>审计</h2>
+            <select
+              value={selectedDetailPanel}
+              onChange={(event) => setSelectedDetailPanel(event.target.value)}
+              aria-label="审计面板"
+            >
+              <option value="tools">工具调用</option>
+              <option value="review">审查结果</option>
+              <option value="artifacts">产物</option>
+              <option value="evidence">证据</option>
+              <option value="assumptions">假设</option>
+              <option value="hardware">硬件验证</option>
+            </select>
+          </div>
+          <div className="detail-dock-body">
+            {selectedDetailPanel === "tools" ? (
+              <RecordPanel
+                title="工具调用"
+                empty="还没有记录工具调用。"
+                records={detail?.tool_calls ?? []}
+                render={(call) => (
+                  <>
+                    <strong>{call.tool_name}</strong>
+                    <span>{formatAgent(call.agent_name)}</span>
+                    <p>{call.result_summary}</p>
+                    <code>{JSON.stringify(call.args)}</code>
+                  </>
+                )}
+              />
+            ) : null}
 
-          <RecordPanel
-            title="审查结果"
-            empty="还没有审查结果。"
-            records={latestReview ? [latestReview] : []}
-            render={(review) => (
-              <>
-                <strong>{formatStatus(review.status)}</strong>
-                <p>{review.summary}</p>
-                {review.retry_instructions ? <p>{review.retry_instructions}</p> : null}
-                <code>{JSON.stringify(review.checks)}</code>
-              </>
-            )}
-          />
+            {selectedDetailPanel === "review" ? (
+              <RecordPanel
+                title="审查结果"
+                empty="还没有审查结果。"
+                records={latestReview ? [latestReview] : []}
+                render={(review) => (
+                  <>
+                    <strong>{formatStatus(review.status)}</strong>
+                    <p>{review.summary}</p>
+                    {review.retry_instructions ? <p>{review.retry_instructions}</p> : null}
+                    <code>{JSON.stringify(review.checks)}</code>
+                  </>
+                )}
+              />
+            ) : null}
 
-          <RecordPanel
-            title="产物"
-            empty="还没有记录产物。"
-            records={detail?.artifacts ?? []}
-            render={(artifact) => (
-              <>
-                <strong>{artifact.title}</strong>
-                <span>{artifact.kind}</span>
-                <code>{artifact.path}</code>
-              </>
-            )}
-          />
+            {selectedDetailPanel === "artifacts" ? (
+              <RecordPanel
+                title="产物"
+                empty="还没有记录产物。"
+                records={detail?.artifacts ?? []}
+                render={(artifact) => (
+                  <>
+                    <strong>{artifact.title}</strong>
+                    <span>{artifact.kind}</span>
+                    <code>{artifact.path}</code>
+                  </>
+                )}
+              />
+            ) : null}
 
-          <RecordPanel
-            title="证据"
-            empty="还没有记录证据。"
-            records={detail?.evidence ?? []}
-            render={(evidence) => (
-              <>
-                <strong>{evidence.claim}</strong>
-                <span>{evidence.source_title}</span>
-                <p>{evidence.notes}</p>
-              </>
-            )}
-          />
+            {selectedDetailPanel === "evidence" ? (
+              <RecordPanel
+                title="证据"
+                empty="还没有记录证据。"
+                records={detail?.evidence ?? []}
+                render={(evidence) => (
+                  <>
+                    <strong>{evidence.claim}</strong>
+                    <span>{evidence.source_title}</span>
+                    <p>{evidence.notes}</p>
+                  </>
+                )}
+              />
+            ) : null}
 
-          <RecordPanel
-            title="假设"
-            empty="还没有记录假设。"
-            records={detail?.assumptions ?? []}
-            render={(assumption) => (
-              <>
-                <strong>{formatStatus(assumption.status)}</strong>
-                <p>{assumption.claim}</p>
-                <span>{assumption.risk}</span>
-              </>
-            )}
-          />
+            {selectedDetailPanel === "assumptions" ? (
+              <RecordPanel
+                title="假设"
+                empty="还没有记录假设。"
+                records={detail?.assumptions ?? []}
+                render={(assumption) => (
+                  <>
+                    <strong>{formatStatus(assumption.status)}</strong>
+                    <p>{assumption.claim}</p>
+                    <span>{assumption.risk}</span>
+                  </>
+                )}
+              />
+            ) : null}
 
-          <RecordPanel
-            title="硬件验证"
-            empty="还没有记录硬件验证。"
-            records={detail?.hardware_validations ?? []}
-            render={(validation) => (
-              <>
-                <strong>{formatStatus(validation.status)}</strong>
-                <span>{validation.name}</span>
-                <p>{validation.evidence}</p>
-              </>
-            )}
-          />
+            {selectedDetailPanel === "hardware" ? (
+              <RecordPanel
+                title="硬件验证"
+                empty="还没有记录硬件验证。"
+                records={detail?.hardware_validations ?? []}
+                render={(validation) => (
+                  <>
+                    <strong>{formatStatus(validation.status)}</strong>
+                    <span>{validation.name}</span>
+                    <p>{validation.evidence}</p>
+                  </>
+                )}
+              />
+            ) : null}
+          </div>
         </section>
 
         <section className="panel event-list" aria-label="任务事件">
