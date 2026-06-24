@@ -148,7 +148,9 @@ def test_acp_prompt_runs_workflow_and_streams_updates(tmp_path, monkeypatch):
     assert texts.count("```mermaid") >= 7
     assert 'manager["管理器<br/>完成"]' in texts
     assert 'writer["撰写员<br/>完成"]' in texts
-    assert tool_updates(client)
+    tools = tool_updates(client)
+    assert tools
+    assert any("Workflow Skills" in update.title for update in tools)
 
 
 def test_acp_hardware_prompt_surfaces_human_approval_gate(tmp_path, monkeypatch):

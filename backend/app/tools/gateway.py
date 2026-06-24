@@ -20,7 +20,7 @@ class ToolGateway:
     def __init__(self, store: TaskStore):
         self.store = store
         self._permissions: dict[str, set[str]] = {
-            "manager": set(),
+            "manager": {"workflow.skills.select"},
             "planner": {"artifact.plan"},
             "researcher": {"evidence.record", "assumption.record"},
             "executor": {"cubemx.plan", "artifact.create"},
@@ -35,6 +35,7 @@ class ToolGateway:
             "cubemx.plan": self._record_cubemx_plan,
             "review.record": self._record_review,
             "hardware.validation": self._record_hardware_validation,
+            "workflow.skills.select": self._record_workflow_skills,
         }
 
     def invoke(
@@ -82,6 +83,25 @@ class ToolGateway:
             metadata={"summary": args.get("summary", "")},
         )
         return GatewayResult(ok=True, summary="计划产物已记录")
+
+    def _record_workflow_skills(self, args: dict[str, Any]) -> GatewayResult:
+        skills = args.get("skills", [])
+        self.store.record_artifact(
+            task_id=args["task_id"],
+            kind="skill_selection",
+            title="Workflow Skills 选择记录",
+            path="generated/workflow-skills.json",
+            metadata={
+                "source": args.get("source", "workflow_skill_registry"),
+                "selection_reason": args.get("selection_reason", ""),
+                "goal_excerpt": args.get("goal_excerpt", ""),
+                "skills": skills,
+            },
+        )
+        return GatewayResult(
+            ok=True,
+            summary=f"已选择 {len(skills)} 个 Workflow Skills",
+        )
 
     def _record_artifact(self, args: dict[str, Any]) -> GatewayResult:
         self.store.record_artifact(

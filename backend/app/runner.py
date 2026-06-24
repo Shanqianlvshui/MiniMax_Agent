@@ -2,19 +2,26 @@ from .llm import LLMClient
 from .models import TaskStatus
 from .storage import TaskStore
 from .tools.gateway import ToolGateway
+from .workflow_skills import (
+    WorkflowSkill,
+    format_skill_context,
+    select_workflow_skills,
+    skill_selection_record,
+    workflow_skills_by_id,
+)
 
 
 AGENT_SEQUENCE = ["manager", "planner", "researcher", "executor", "reviewer", "writer"]
 
 AGENT_PROMPTS = {
     "manager": (
-        "你是 Manager Agent。你只负责确认任务范围、选择固定工作流、指出必须保留的"
-        "验证门禁。不要执行工具，不要声称硬件已经验证。输出中文。"
+        "你是 Manager Agent。你负责确认任务范围、选择固定工作流、读取已选 Workflow Skills、"
+        "指出必须保留的验证门禁。不要执行业务工具，不要声称硬件已经验证。输出中文。"
         "最终必须输出 3 到 8 行可见中文文本，不能只输出 thinking。"
     ),
     "planner": (
-        "你是 Planner Agent。你负责把任务拆成可验证步骤。每一步必须包含验证标准，"
-        "硬件相关结论必须标记需要官方来源或实测证据。输出中文。"
+        "你是 Planner Agent。你负责按已选 Workflow Skills 把任务拆成可验证步骤。"
+        "每一步必须包含验证标准，硬件相关结论必须标记需要官方来源或实测证据。输出中文。"
         "最终必须输出 3 到 8 行可见中文文本，不能只输出 thinking。"
     ),
     "researcher": (
@@ -53,14 +60,19 @@ class TaskRunner:
 
         self.store.append_event(task_id, "task.started", {"status": task.status.value})
         try:
-            manager_output = await self._run_llm_agent(task_id, "manager", task.goal)
+            skills = self._select_and_record_skills(task_id, task.goal)
+            manager_output = await self._run_llm_agent(
+                task_id,
+                "manager",
+                self._agent_context(task_id, task.goal, "manager", "", skills),
+            )
             if self._should_stop(task_id):
                 return
 
             planner_output = await self._run_llm_agent(
                 task_id,
                 "planner",
-                self._agent_context(task_id, task.goal, "planner", manager_output),
+                self._agent_context(task_id, task.goal, "planner", manager_output, skills),
             )
             self._record_planner_artifact(task_id, planner_output)
             if self._should_stop(task_id):
@@ -69,7 +81,7 @@ class TaskRunner:
             researcher_output = await self._run_llm_agent(
                 task_id,
                 "researcher",
-                self._agent_context(task_id, task.goal, "researcher", planner_output),
+                self._agent_context(task_id, task.goal, "researcher", planner_output, skills),
             )
             self._record_researcher_outputs(task_id, task.goal, researcher_output)
             if self._should_stop(task_id):
@@ -78,7 +90,7 @@ class TaskRunner:
             executor_output = await self._run_llm_agent(
                 task_id,
                 "executor",
-                self._agent_context(task_id, task.goal, "executor", researcher_output),
+                self._agent_context(task_id, task.goal, "executor", researcher_output, skills),
             )
             self._record_executor_outputs(task_id, task.goal, executor_output)
             if self._should_stop(task_id):
@@ -87,7 +99,7 @@ class TaskRunner:
             reviewer_output = await self._run_llm_agent(
                 task_id,
                 "reviewer",
-                self._agent_context(task_id, task.goal, "reviewer", executor_output),
+                self._agent_context(task_id, task.goal, "reviewer", executor_output, skills),
             )
             should_wait = self._record_reviewer_outputs(task_id, task.goal, reviewer_output)
             if should_wait:
@@ -179,10 +191,11 @@ class TaskRunner:
         goal: str,
         extra_note: str = "",
     ) -> None:
+        skills = self._skills_from_artifacts(task_id)
         writer_output = await self._run_llm_agent(
             task_id,
             "writer",
-            self._agent_context(task_id, goal, "writer", extra_note),
+            self._agent_context(task_id, goal, "writer", extra_note, skills),
         )
         metadata = {"status": "complete", "summary": writer_output}
         if extra_note:
@@ -242,6 +255,29 @@ class TaskRunner:
             {"agent": agent_name, "summary": summary},
         )
         return summary
+
+    def _select_and_record_skills(
+        self,
+        task_id: str,
+        goal: str,
+    ) -> list[WorkflowSkill]:
+        skills = select_workflow_skills(goal)
+        record = skill_selection_record(goal, skills)
+        self.gateway.invoke(
+            task_id=task_id,
+            agent_name="manager",
+            tool_name="workflow.skills.select",
+            args=record,
+        )
+        self.store.append_event(
+            task_id,
+            "workflow.skills.selected",
+            {
+                "skills": [skill.id for skill in skills],
+                "count": len(skills),
+            },
+        )
+        return skills
 
     def _record_planner_artifact(self, task_id: str, planner_output: str) -> None:
         self.gateway.invoke(
@@ -450,10 +486,17 @@ class TaskRunner:
         goal: str,
         agent_name: str,
         prior_output: str,
+        skills: list[WorkflowSkill] | None = None,
     ) -> str:
         detail = self.store.task_detail(task_id)
         if detail is None:
-            return f"任务目标：{goal}\n当前 Agent：{agent_name}\n"
+            return "\n".join(
+                [
+                    f"任务目标：{goal}",
+                    f"当前 Agent：{agent_name}",
+                    format_skill_context(skills or [], agent_name),
+                ]
+            )
 
         event_count = len(detail.events)
         tool_count = len(detail.tool_calls)
@@ -474,12 +517,29 @@ class TaskRunner:
                 f"假设数：{assumption_count}",
                 f"审查记录数：{review_count}",
                 f"硬件验证记录数：{hardware_count}",
+                format_skill_context(skills or [], agent_name),
                 "上一个 Agent 输出摘要：",
                 prior_output[:2000],
                 "约束：不要声称未验证硬件已经成功；硬件事实必须有官方来源或实测证据。",
                 "输出要求：必须输出可见中文文本，不能只进行 thinking。",
             ]
         )
+
+    def _skills_from_artifacts(self, task_id: str) -> list[WorkflowSkill]:
+        detail = self.store.task_detail(task_id)
+        if detail is None:
+            return []
+        skill_ids: set[str] = set()
+        for artifact in detail.artifacts:
+            if artifact.kind != "skill_selection":
+                continue
+            for skill in artifact.metadata.get("skills", []):
+                skill_id = skill.get("id")
+                if skill_id:
+                    skill_ids.add(skill_id)
+        if not skill_ids:
+            return []
+        return workflow_skills_by_id(skill_ids)
 
     def _should_stop(self, task_id: str) -> bool:
         task = self.store.get_task(task_id)

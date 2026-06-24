@@ -47,10 +47,20 @@ def test_non_hardware_task_runs_full_agent_sequence(tmp_path, monkeypatch):
         "writer",
     }
     assert {artifact["kind"] for artifact in detail["artifacts"]} >= {
+        "skill_selection",
         "plan",
         "execution_summary",
         "final_report",
     }
+    skill_artifact = next(
+        artifact
+        for artifact in detail["artifacts"]
+        if artifact["kind"] == "skill_selection"
+    )
+    selected_skill_ids = {
+        skill["id"] for skill in skill_artifact["metadata"]["skills"]
+    }
+    assert selected_skill_ids >= {"skill-router", "review-findings-first"}
     assert detail["reviews"][-1]["status"] == "passed"
 
 
@@ -76,6 +86,30 @@ def test_stm32_usb_task_requires_human_approval_until_board_facts_are_confirmed(
     detail = client.get(f"/tasks/{task['id']}/details").json()
 
     assert detail["task"]["status"] == "waiting_human_input"
+    skill_artifact = next(
+        artifact
+        for artifact in detail["artifacts"]
+        if artifact["kind"] == "skill_selection"
+    )
+    selected_skill_ids = {
+        skill["id"] for skill in skill_artifact["metadata"]["skills"]
+    }
+    assert selected_skill_ids >= {
+        "skill-router",
+        "grill-before-risky-work",
+        "domain-language",
+        "tdd-feedback-loop",
+        "evidence-first-research",
+        "review-findings-first",
+    }
+    assert any(
+        event["type"] == "workflow.skills.selected"
+        for event in detail["events"]
+    )
+    assert any(
+        call["tool_name"] == "workflow.skills.select" and call["status"] == "ok"
+        for call in detail["tool_calls"]
+    )
     assert detail["reviews"][-1]["status"] == "needs_human"
     assert detail["hardware_validations"][-1]["status"] == "not_run"
     assert any(
@@ -145,3 +179,31 @@ def test_empty_llm_agent_output_gets_visible_audit_token(tmp_path):
         event.type == "agent.token" and event.payload["agent"] == "manager"
         for event in events
     )
+
+
+def test_agent_context_includes_applicable_workflow_skills(tmp_path):
+    store = TaskStore(tmp_path / "tasks.db")
+    task = store.create_task("task-1", "Develop STM32F103C8T6 USB CDC driver")
+    runner = TaskRunner(store, LLMClient())
+    skills = runner._select_and_record_skills(task.id, task.goal)
+
+    planner_context = runner._agent_context(
+        task_id=task.id,
+        goal=task.goal,
+        agent_name="planner",
+        prior_output="manager output",
+        skills=skills,
+    )
+    researcher_context = runner._agent_context(
+        task_id=task.id,
+        goal=task.goal,
+        agent_name="researcher",
+        prior_output="planner output",
+        skills=skills,
+    )
+
+    assert "Workflow Skills" in planner_context
+    assert "Skill Router" in planner_context
+    assert "TDD Feedback Loop" in planner_context
+    assert "Evidence First Research" in researcher_context
+    assert "Review Findings First" in researcher_context

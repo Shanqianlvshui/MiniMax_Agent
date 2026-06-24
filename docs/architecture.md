@@ -11,6 +11,7 @@ Frontend
 
 FastAPI
   -> TaskRunner
+  -> WorkflowSkillRegistry
   -> LangGraph workflow
   -> LLMClient
   -> ToolGateway
@@ -29,6 +30,7 @@ FastAPI
     tools.py             # controlled tool gateway
     events.py            # SSE event stream
     storage.py           # SQLite persistence
+    workflow_skills.py   # task-routed engineering skill selection
     evidence.py          # EvidencePolicy, SourceVerifier, AssumptionLedger
     cubemx.py            # controlled .ioc edits and CubeMX CLI integration
     hardware.py          # board validation and serial test helpers
@@ -72,7 +74,9 @@ Approval gates are persisted as task states. The graph is not expected to stay a
 ## Workflow Graph
 
 ```text
-Planner
+Manager
+ -> skill_router
+ -> Planner
  -> Researcher
  -> evidence_gate?
  -> Executor
@@ -90,6 +94,29 @@ needs_human -> waiting_human_input
 ```
 
 Automatic retries return to Executor with targeted retry instructions. They do not rerun Planner/Researcher unless a human decision requests it.
+
+## Workflow Skills
+
+The system adopts the core idea from `mattpocock/skills`: skills are small,
+task-routed engineering disciplines, not a giant prompt. Manager selects the
+smallest useful skill set before work starts, records that choice through the
+ToolGateway, and later agents receive only the skills relevant to their role.
+
+Initial workflow skills:
+
+```text
+skill-router              Always-on skill selection discipline.
+grill-before-risky-work   Force ambiguity and hardware assumptions into gates.
+domain-language           Keep chip, board, protocol, and tool terms consistent.
+tdd-feedback-loop         Prefer testable vertical slices and explicit checks.
+evidence-first-research   Require official or first-hand evidence for hardware facts.
+deep-module-design        Keep adapters, tools, and orchestration behind clean interfaces.
+review-findings-first     Make Reviewer list blockers and risk before summary.
+```
+
+Skill selection is persisted as a `skill_selection` artifact and a
+`workflow.skills.select` tool call. Skills do not grant tool permissions by
+themselves; ToolGateway remains the authority for what each agent may execute.
 
 ## LLM Client
 
