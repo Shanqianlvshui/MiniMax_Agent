@@ -7,7 +7,11 @@ from acp.schema import (
     TextResourceContents,
 )
 
-from app.adapters.acp_server import MiniMaxAcpAgent, extract_prompt_text
+from app.adapters.acp_server import (
+    MiniMaxAcpAgent,
+    extract_prompt_text,
+    render_workflow_diagram,
+)
 from app.models import TaskStatus
 from app.storage import TaskStore
 
@@ -58,6 +62,22 @@ def test_extract_prompt_text_accepts_text_links_and_embedded_resources():
     assert "[资源链接] 官方文档: https://example.com/reference.pdf" in text
     assert "[嵌入资源] file:///note.md" in text
     assert "板级说明" in text
+
+
+def test_render_workflow_diagram_marks_completed_current_and_pending():
+    diagram = render_workflow_diagram(
+        completed_agents={"manager", "planner"},
+        current_agent="researcher",
+        note="规划员已完成",
+    )
+
+    assert "```mermaid" in diagram
+    assert 'manager["管理器<br/>完成"]' in diagram
+    assert 'planner["规划员<br/>完成"]' in diagram
+    assert 'researcher["研究员<br/>当前"]' in diagram
+    assert 'executor["执行员<br/>待执行"]' in diagram
+    assert "manager --> planner" in diagram
+    assert "class researcher current" in diagram
 
 
 def test_acp_agent_initializes_and_creates_session(tmp_path, monkeypatch):
@@ -125,6 +145,9 @@ def test_acp_prompt_runs_workflow_and_streams_updates(tmp_path, monkeypatch):
     assert "管理器（manager）开始" in texts
     assert "撰写员（writer）完成" in texts
     assert "任务已完成" in texts
+    assert texts.count("```mermaid") >= 7
+    assert 'manager["管理器<br/>完成"]' in texts
+    assert 'writer["撰写员<br/>完成"]' in texts
     assert tool_updates(client)
 
 
@@ -157,6 +180,8 @@ def test_acp_hardware_prompt_surfaces_human_approval_gate(tmp_path, monkeypatch)
     assert task is not None
     assert task.status == TaskStatus.WAITING_HUMAN_INPUT
     assert "需要人工批准" in texts
+    assert "审查员要求人工处理" in texts
+    assert 'reviewer["审查员<br/>完成"]' in texts
     assert any("审查" in update.title for update in tools)
     assert any("证据" in update.title for update in tools)
     assert any("假设" in update.title for update in tools)

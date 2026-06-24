@@ -28,6 +28,8 @@ from ..runner import TaskRunner
 from ..storage import TaskStore
 
 
+WORKFLOW_STEPS = ["manager", "planner", "researcher", "executor", "reviewer", "writer"]
+
 AGENT_LABELS = {
     "manager": "管理器",
     "planner": "规划员",
@@ -44,6 +46,7 @@ class AcpSessionState:
     task_id: str | None = None
     last_event_seq: int = 0
     sent_tool_call_ids: set[str] = field(default_factory=set)
+    completed_agents: set[str] = field(default_factory=set)
 
 
 class MiniMaxAcpAgent:
@@ -190,10 +193,16 @@ class MiniMaxAcpAgent:
         session.task_id = task.id
         session.last_event_seq = 0
         session.sent_tool_call_ids.clear()
+        session.completed_agents.clear()
 
         await self._send_agent_text(
             session_id,
             f"已创建内部任务 `{task.id}`，开始运行证据优先多 Agent 工作流。\n\n",
+        )
+        await self._send_workflow_diagram(
+            session_id,
+            current_agent="manager",
+            note="工作流已启动",
         )
 
         runner = TaskRunner(self.store, create_llm_client())
@@ -260,9 +269,15 @@ class MiniMaxAcpAgent:
 
         if event.type == "agent.completed":
             agent = payload.get("agent", "")
+            self._require_session(session_id).completed_agents.add(agent)
             await self._send_agent_text(
                 session_id,
                 f"\n### {self._agent_label(agent)}完成\n",
+            )
+            await self._send_workflow_diagram(
+                session_id,
+                current_agent=_next_agent(agent),
+                note=f"{self._agent_label(agent)}已完成",
             )
             return
 
@@ -272,6 +287,11 @@ class MiniMaxAcpAgent:
             await self._send_agent_text(
                 session_id,
                 f"\n\n**需要人工批准**：{reason}\n",
+            )
+            await self._send_workflow_diagram(
+                session_id,
+                current_agent="reviewer",
+                note="审查员要求人工处理",
             )
             return
 
@@ -302,6 +322,27 @@ class MiniMaxAcpAgent:
             f"- 假设记录：{len(detail.assumptions)} 条\n"
             f"- 审查记录：{len(detail.reviews)} 条\n"
             f"- 产物记录：{len(detail.artifacts)} 条\n",
+        )
+        await self._send_workflow_diagram(
+            session_id,
+            current_agent=None,
+            note=status_text,
+        )
+
+    async def _send_workflow_diagram(
+        self,
+        session_id: str,
+        current_agent: str | None,
+        note: str,
+    ) -> None:
+        session = self._require_session(session_id)
+        await self._send_agent_text(
+            session_id,
+            render_workflow_diagram(
+                completed_agents=session.completed_agents,
+                current_agent=current_agent,
+                note=note,
+            ),
         )
 
     async def _send_current_tool_records(self, session_id: str) -> None:
@@ -480,6 +521,64 @@ def extract_prompt_text(prompt) -> str:
             if text:
                 parts.append(f"\n[嵌入资源] {resource.uri}\n{text}")
     return "\n".join(parts)
+
+
+def _next_agent(agent_name: str) -> str | None:
+    try:
+        index = WORKFLOW_STEPS.index(agent_name)
+    except ValueError:
+        return None
+    next_index = index + 1
+    if next_index >= len(WORKFLOW_STEPS):
+        return None
+    return WORKFLOW_STEPS[next_index]
+
+
+def render_workflow_diagram(
+    completed_agents: set[str],
+    current_agent: str | None,
+    note: str,
+) -> str:
+    lines = [
+        "\n\n**工作流编排状态**",
+        "",
+        f"> {note}",
+        "",
+        "```mermaid",
+        "flowchart LR",
+    ]
+    for agent in WORKFLOW_STEPS:
+        label = AGENT_LABELS[agent]
+        if agent in completed_agents:
+            state = "完成"
+        elif agent == current_agent:
+            state = "当前"
+        else:
+            state = "待执行"
+        lines.append(f'    {agent}["{label}<br/>{state}"]')
+
+    for left, right in zip(WORKFLOW_STEPS, WORKFLOW_STEPS[1:]):
+        lines.append(f"    {left} --> {right}")
+
+    lines.extend(
+        [
+            "    classDef done fill:#123d2a,stroke:#40c977,color:#ffffff",
+            "    classDef current fill:#12304f,stroke:#339cff,color:#ffffff",
+            "    classDef pending fill:#242424,stroke:#666666,color:#cccccc",
+        ]
+    )
+
+    for agent in WORKFLOW_STEPS:
+        if agent in completed_agents:
+            css_class = "done"
+        elif agent == current_agent:
+            css_class = "current"
+        else:
+            css_class = "pending"
+        lines.append(f"    class {agent} {css_class}")
+
+    lines.append("```")
+    return "\n".join(lines) + "\n"
 
 
 async def main() -> None:
